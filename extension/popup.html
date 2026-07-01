@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        width: 340px; margin: 0; padding: 14px;
+        font-family: system-ui, "Segoe UI", Arial, sans-serif;
+        background: #0b0f19; color: #e5e7eb; font-size: 13px;
+      }
+      h1 { font-size: 15px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+      h1 .dot { width: 10px; height: 10px; border-radius: 50%; background: #6366f1; }
+      label { display: block; font-size: 11px; color: #9ca3af; margin: 8px 0 3px; }
+      input, textarea {
+        width: 100%; box-sizing: border-box; background: #131a2a; color: #e5e7eb;
+        border: 1px solid #25304a; border-radius: 7px; padding: 7px 9px; font-size: 12px;
+      }
+      textarea { resize: vertical; min-height: 48px; }
+      button {
+        width: 100%; margin-top: 12px; padding: 9px; border: 0; border-radius: 8px;
+        background: #6366f1; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
+      }
+      button:disabled { opacity: .6; cursor: default; }
+      .row { display: flex; gap: 8px; }
+      .row > div { flex: 1; }
+      .muted { font-size: 11px; color: #6b7280; margin-top: 8px; }
+      .msg { margin-top: 10px; font-size: 12px; min-height: 16px; }
+      .ok { color: #34d399; } .err { color: #fb7185; }
+      details { margin-top: 10px; }
+      summary { cursor: pointer; color: #9ca3af; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <h1><span class="dot"></span> Save to JobPilot</h1>
+
+    <label>Job title</label>
+    <input id="title" placeholder="e.g. Junior Software Developer" />
+
+    <div class="row">
+      <div>
+        <label>Company</label>
+        <input id="company" placeholder="Company" />
+      </div>
+      <div>
+        <label>Location</label>
+        <input id="location" placeholder="Location" />
+      </div>
+    </div>
+
+    <label>Description (auto-filled from the page)</label>
+    <textarea id="description" placeholder="Paste or edit the job description"></textarea>
+
+    <button id="save">Save & AI-score</button>
+    <div class="msg" id="msg"></div>
+
+    <details>
+      <summary>Settings (backend URL &amp; token)</summary>
+      <label>Backend URL</label>
+      <input id="backend" placeholder="http://localhost:8787" />
+      <label>Access token (only if you enabled Supabase sign-in)</label>
+      <input id="token" placeholder="paste your JobPilot session token" />
+      <div class="muted">In local mode you can leave the token blank.</div>
+    </details>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

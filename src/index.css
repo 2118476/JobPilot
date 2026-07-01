@@ -1,0 +1,211 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* JobPilot Dark Theme (Default) */
+    --bg-primary: #0B0F19;
+    --bg-secondary: #111827;
+    --bg-tertiary: #1A2235;
+    --bg-elevated: #1E293B;
+    --border-subtle: #1E293B;
+    --border-default: #334155;
+    --border-focus: #6366F1;
+    --text-primary: #F1F5F9;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    --text-inverse: #0B0F19;
+
+    /* Accent Colors */
+    --accent-indigo: #6366F1;
+    --accent-indigo-hover: #818CF8;
+    --accent-indigo-muted: rgba(99,102,241,0.15);
+    --accent-cyan: #22D3EE;
+    --accent-cyan-muted: rgba(34,211,238,0.12);
+    --accent-emerald: #34D399;
+    --accent-emerald-muted: rgba(52,211,153,0.12);
+    --accent-amber: #FBBF24;
+    --accent-amber-muted: rgba(251,191,36,0.12);
+    --accent-orange: #FB923C;
+    --accent-orange-muted: rgba(251,146,60,0.12);
+    --accent-rose: #FB7185;
+    --accent-rose-muted: rgba(251,113,133,0.12);
+    --accent-violet: #A78BFA;
+    --accent-violet-muted: rgba(167,139,250,0.12);
+
+    /* Layout Tokens */
+    --sidebar-width: 256px;
+    --sidebar-collapsed: 72px;
+    --topbar-height: 64px;
+    --max-content-width: 1440px;
+    --card-radius: 12px;
+    --card-radius-sm: 8px;
+    --card-radius-lg: 16px;
+    --input-radius: 8px;
+    --button-radius: 8px;
+    --button-radius-pill: 999px;
+
+    /* Animation Tokens */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --transition-fast: 150ms ease-out;
+    --transition-base: 200ms ease-out;
+    --transition-slow: 300ms ease-out;
+
+    /* shadcn compatibility */
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+    --card: 217 33% 9%;
+    --card-foreground: 210 40% 96%;
+    --popover: 217 19% 17%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 19% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 19% 17%;
+    --muted-foreground: 215 16% 57%;
+    --accent: 217 19% 17%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 350 89% 72%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 19% 17%;
+    --input: 217 19% 27%;
+    --ring: 239 84% 67%;
+    --radius: 0.625rem;
+    --sidebar-background: 217 33% 9%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 19% 17%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 217 19% 17%;
+    --sidebar-ring: 239 84% 67%;
+  }
+
+  [data-theme="light"] {
+    --bg-primary: #F8FAFC;
+    --bg-secondary: #FFFFFF;
+    --bg-tertiary: #F1F5F9;
+    --bg-elevated: #FFFFFF;
+    --border-subtle: #E2E8F0;
+    --border-default: #CBD5E1;
+    --border-focus: #6366F1;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --text-inverse: #F8FAFC;
+
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 239 84% 67%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 239 84% 67%;
+  }
+
+  * {
+    @apply border-border-subtle;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-default);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+
+  /* Focus visible */
+  :focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+
+  /* Selection */
+  ::selection {
+    background: var(--accent-indigo-muted);
+    color: var(--text-primary);
+  }
+}
+
+@layer utilities {
+  .transition-theme {
+    transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .gradient-mesh {
+    background:
+      radial-gradient(ellipse at 20% 30%, rgba(99,102,241,0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 70%, rgba(34,211,238,0.1) 0%, transparent 50%),
+      var(--bg-primary);
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

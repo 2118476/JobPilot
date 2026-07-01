@@ -1,0 +1,36 @@
+# Render blueprint for the JobPilot backend API (Node/Express).
+# In Render: New → Blueprint → connect this repo → it reads this file.
+# Then set the secret env vars (marked sync:false) in the dashboard.
+services:
+  - type: web
+    name: jobpilot-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      # ── Secrets — set these in the Render dashboard (never commit them) ──
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # ── Optional ──
+      - key: ADZUNA_APP_ID
+        sync: false
+      - key: ADZUNA_APP_KEY
+        sync: false
+      - key: REED_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_TO
+        sync: false

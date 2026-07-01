@@ -1,0 +1,16 @@
+# Netlify config for the JobPilot frontend (static Vite build).
+# Set VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY and VITE_API_URL as
+# environment variables in the Netlify dashboard (Site settings → Env).
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# The app uses a hash router, but this SPA fallback keeps deep links working
+# and future-proofs a switch to a browser router.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
