@@ -86,6 +86,12 @@ export async function dbGetDocuments(userId) {
   return data || []
 }
 
+export async function dbDeleteDocument(userId, id) {
+  const { error } = await admin().from('documents').delete().eq('user_id', userId).eq('id', id)
+  if (error) throw error
+  return true
+}
+
 export async function dbSaveDocuments(userId, docs) {
   const rows = (docs || []).map((d) => ({
     user_id: userId,

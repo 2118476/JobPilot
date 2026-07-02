@@ -13,7 +13,7 @@ import dotenv from 'dotenv'
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), '.env') })
 import express from 'express'
 import cors from 'cors'
-import { getProfile, saveProfile, getJobs, saveJobs, getDocuments, saveDocuments, getActiveTrack, setActiveTrack, listTracks } from './store.js'
+import { getProfile, saveProfile, getJobs, saveJobs, getDocuments, saveDocuments, deleteDocument, getActiveTrack, setActiveTrack, listTracks } from './store.js'
 import { aiStatus, scoreJob, tailorDocument, interviewPrep, coachReply } from './ai.js'
 import { requireAuth } from './auth.js'
 import { supabaseConfigured } from './supabaseAdmin.js'
@@ -310,6 +310,15 @@ app.post('/api/documents', requireAuth, async (req, res) => {
     docs.unshift(doc)
     await saveDocuments(req.userId, docs.slice(0, 200))
     res.json(doc)
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) })
+  }
+})
+
+app.delete('/api/documents/:id', requireAuth, async (req, res) => {
+  try {
+    await deleteDocument(req.userId, req.params.id)
+    res.json({ ok: true })
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) })
   }

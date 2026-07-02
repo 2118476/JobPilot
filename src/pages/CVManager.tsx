@@ -1,17 +1,20 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
-import { getDocuments } from '@/lib/api'
+import { getDocuments, deleteDocument as apiDeleteDocument } from '@/lib/api'
 import { downloadAsPdf } from '@/lib/pdf'
+import { diffLines, diffStats } from '@/lib/diff'
+import { useUIStore } from '@/store/uiStore'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, FileCheck, Upload, Download, Pencil, Eye, Trash2, Copy, X,
   GitBranch, Sparkles, AlertCircle, CheckCircle2, Shield, Zap,
-  ChevronRight, Activity, Check, XCircle
+  ChevronRight, Activity, Check, XCircle, Mail, History
 } from 'lucide-react'
 // mock data defined inline in this file
 
 // ─── Types ────────────────────────────────────
 interface CVVersion {
   id: string
+  type: 'cv' | 'cover_letter'
   jobTitle: string
   company: string
   createdAt: string
@@ -19,6 +22,23 @@ interface CVVersion {
   changes: string
   status: 'not_used' | 'used'
   content: string
+  /** Documents for the same job+type form a version group. */
+  groupKey: string
+  /** 1-based version number within the group (oldest = v1). */
+  version: number
+}
+
+// ─── Master CV persistence (survives reloads) ──
+const MASTER_KEY = 'jobpilot_master_cv'
+const MASTER_TS_KEY = 'jobpilot_master_cv_updated'
+
+function persistMaster(text: string): string {
+  const ts = new Date().toISOString()
+  try {
+    localStorage.setItem(MASTER_KEY, text)
+    localStorage.setItem(MASTER_TS_KEY, ts)
+  } catch { /* localStorage unavailable */ }
+  return ts
 }
 
 interface ActivityEntry {
@@ -95,26 +115,57 @@ const fadeUp = {
   visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.06, duration: 0.35, ease: easeOut } }),
 }
 
-// ─── Diff Viewer ──────────────────────────────
-function DiffViewer({ master, tailored }: { master: string; tailored: string }) {
+// ─── Diff Viewer (real line-level diff, side by side) ─────────
+function DiffViewer({ baseLabel, base, targetLabel, target }: { baseLabel: string; base: string; targetLabel: string; target: string }) {
+  const rows = useMemo(() => diffLines(base, target), [base, target])
+  const stats = useMemo(() => diffStats(rows), [rows])
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border border-border-subtle rounded-xl overflow-hidden">
-      <div className="border-r border-border-subtle">
-        <div className="px-4 py-2.5 bg-bg-tertiary border-b border-border-subtle flex items-center gap-2">
-          <FileCheck size={14} className="text-accent-emerald" />
-          <span className="text-xs font-semibold text-text-secondary">Master CV</span>
-        </div>
-        <div className="p-4 max-h-[500px] overflow-y-auto">
-          <pre className="text-xs text-text-secondary whitespace-pre-wrap font-mono leading-relaxed">{master}</pre>
-        </div>
+    <div>
+      {/* Change summary */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 text-xs font-medium">
+        <span className="flex items-center gap-1 text-accent-emerald">
+          <span className="w-2.5 h-2.5 rounded-sm bg-accent-emerald/30 border border-accent-emerald/50" />
+          +{stats.added} added
+        </span>
+        <span className="flex items-center gap-1 text-accent-rose">
+          <span className="w-2.5 h-2.5 rounded-sm bg-accent-rose/30 border border-accent-rose/50" />
+          −{stats.removed} removed
+        </span>
+        <span className="text-text-muted">{stats.same} unchanged · {stats.changedPct}% of lines differ</span>
       </div>
-      <div>
-        <div className="px-4 py-2.5 bg-bg-tertiary border-b border-border-subtle flex items-center gap-2">
-          <Sparkles size={14} className="text-accent-indigo" />
-          <span className="text-xs font-semibold text-text-secondary">Tailored CV</span>
+
+      <div className="border border-border-subtle rounded-xl overflow-hidden">
+        {/* Column headers */}
+        <div className="grid grid-cols-2 bg-bg-tertiary border-b border-border-subtle">
+          <div className="px-4 py-2.5 flex items-center gap-2 border-r border-border-subtle min-w-0">
+            <FileCheck size={14} className="text-accent-emerald flex-shrink-0" />
+            <span className="text-xs font-semibold text-text-secondary truncate">{baseLabel}</span>
+          </div>
+          <div className="px-4 py-2.5 flex items-center gap-2 min-w-0">
+            <Sparkles size={14} className="text-accent-indigo flex-shrink-0" />
+            <span className="text-xs font-semibold text-text-secondary truncate">{targetLabel}</span>
+          </div>
         </div>
-        <div className="p-4 max-h-[500px] overflow-y-auto">
-          <pre className="text-xs text-text-secondary whitespace-pre-wrap font-mono leading-relaxed">{tailored}</pre>
+        {/* Aligned diff rows */}
+        <div className="max-h-[480px] overflow-y-auto font-mono text-[11px] leading-relaxed">
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-2">
+              <div
+                className={`px-4 py-[1px] border-r border-border-subtle whitespace-pre-wrap break-words min-w-0 ${
+                  r.type === 'removed' ? 'bg-accent-rose/10 text-accent-rose' : 'text-text-secondary'
+                }`}
+              >
+                {r.left === null ? ' ' : r.left || ' '}
+              </div>
+              <div
+                className={`px-4 py-[1px] whitespace-pre-wrap break-words min-w-0 ${
+                  r.type === 'added' ? 'bg-accent-emerald/10 text-accent-emerald' : 'text-text-secondary'
+                }`}
+              >
+                {r.right === null ? ' ' : r.right || ' '}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -145,26 +196,48 @@ function ConfirmationDialog({ open, title, message, onConfirm, onCancel }: { ope
 }
 
 export default function CVManager() {
-  const [masterCV, setMasterCV] = useState(masterCVContent)
+  const addToast = useUIStore((s) => s.addToast)
+  // Master CV persists in localStorage (with a real "last updated" timestamp).
+  const [masterCV, setMasterCV] = useState(() => {
+    try { return localStorage.getItem(MASTER_KEY) || masterCVContent } catch { return masterCVContent }
+  })
+  const [masterUpdated, setMasterUpdated] = useState<string | null>(() => {
+    try { return localStorage.getItem(MASTER_TS_KEY) } catch { return null }
+  })
   const [tailoredVersions, setTailoredVersions] = useState<CVVersion[]>(initialTailoredVersions)
+  const [filterType, setFilterType] = useState<'all' | 'cv' | 'cover_letter'>('all')
   const [editingMaster, setEditingMaster] = useState(false)
   const [editText, setEditText] = useState(masterCV)
   const [showPasteModal, setShowPasteModal] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [compareVersion, setCompareVersion] = useState<CVVersion | null>(null)
+  const [compareBaseId, setCompareBaseId] = useState<string>('master') // 'master' | version id
   const [viewVersion, setViewVersion] = useState<CVVersion | null>(null)
   const [deleteVersion, setDeleteVersion] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Load real AI-generated documents from the backend
+  // Load real AI-generated documents from the backend, grouped into version
+  // histories: documents for the same job+type get version numbers (oldest = v1).
   useEffect(() => {
     getDocuments()
       .then((docs) => {
         if (docs && docs.length) {
+          const keyOf = (d: { type: string; job_title: string; company: string }) =>
+            `${d.type}|${(d.job_title || '').toLowerCase().trim()}|${(d.company || '').toLowerCase().trim()}`
+          const sorted = [...docs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          const counters = new Map<string, number>()
+          const versionOf = new Map<string, number>()
+          for (const d of sorted) {
+            const k = keyOf(d)
+            const v = (counters.get(k) || 0) + 1
+            counters.set(k, v)
+            versionOf.set(d.id, v)
+          }
           setTailoredVersions(
             docs.map((d) => ({
               id: d.id,
+              type: d.type === 'cover_letter' ? ('cover_letter' as const) : ('cv' as const),
               jobTitle: d.job_title || (d.type === 'cover_letter' ? 'Cover Letter' : 'Tailored CV'),
               company: d.company || '—',
               createdAt: d.created_at,
@@ -172,12 +245,33 @@ export default function CVManager() {
               changes: d.type === 'cover_letter' ? 'AI-generated cover letter' : 'AI-tailored CV',
               status: 'not_used' as const,
               content: d.content,
+              groupKey: keyOf(d),
+              version: versionOf.get(d.id) || 1,
             })),
           )
         }
       })
       .catch(() => {})
   }, [])
+
+  // Versions visible under the current filter
+  const visibleVersions = useMemo(
+    () => (filterType === 'all' ? tailoredVersions : tailoredVersions.filter((v) => v.type === filterType)),
+    [tailoredVersions, filterType],
+  )
+
+  // Sibling versions of the doc being compared (for the baseline picker)
+  const compareSiblings = useMemo(
+    () =>
+      compareVersion
+        ? tailoredVersions
+            .filter((v) => v.groupKey === compareVersion.groupKey && v.id !== compareVersion.id)
+            .sort((a, b) => a.version - b.version)
+        : [],
+    [compareVersion, tailoredVersions],
+  )
+  const compareBase =
+    compareBaseId === 'master' ? null : tailoredVersions.find((v) => v.id === compareBaseId) || null
 
   // Activity log derived from the real generated documents
   const activityLog = useMemo<ActivityEntry[]>(
@@ -211,6 +305,8 @@ export default function CVManager() {
       const text = e.target?.result as string
       setMasterCV(text)
       setEditText(text)
+      setMasterUpdated(persistMaster(text))
+      addToast({ type: 'success', title: 'Master CV updated', message: file.name })
     }
     reader.readAsText(file)
   }
@@ -218,6 +314,8 @@ export default function CVManager() {
   const handleSaveMaster = () => {
     setMasterCV(editText)
     setEditingMaster(false)
+    setMasterUpdated(persistMaster(editText))
+    addToast({ type: 'success', title: 'Master CV saved' })
   }
 
   const handlePasteSave = () => {
@@ -225,11 +323,15 @@ export default function CVManager() {
     setEditText(pasteText)
     setShowPasteModal(false)
     setPasteText('')
+    setMasterUpdated(persistMaster(pasteText))
+    addToast({ type: 'success', title: 'Master CV saved' })
   }
 
   const handleCreateFromProfile = () => {
     setMasterCV(masterCVContent)
     setEditText(masterCVContent)
+    setMasterUpdated(persistMaster(masterCVContent))
+    addToast({ type: 'success', title: 'Master CV restored from profile' })
   }
 
   // Download as a polished, send-ready PDF (was plain .txt).
@@ -238,13 +340,24 @@ export default function CVManager() {
     downloadAsPdf(content, filename, { type })
   }
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text)
+  // Type-aware download for a tailored version (correct name + PDF layout).
+  const downloadVersion = (v: CVVersion) => {
+    const slug = v.jobTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    downloadAsPdf(v.content, `${slug}-${v.type === 'cover_letter' ? 'cover-letter' : 'cv'}-v${v.version}`, { type: v.type })
   }
 
-  const handleDeleteVersion = (id: string) => {
-    setTailoredVersions(prev => prev.filter(v => v.id !== id))
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text)
+    addToast({ type: 'success', title: 'Copied to clipboard' })
+  }
+
+  // Really delete — from the backend, not just the local list.
+  const handleDeleteVersion = async (id: string) => {
     setDeleteVersion(null)
+    const ok = await apiDeleteDocument(id)
+    setTailoredVersions(prev => prev.filter(v => v.id !== id))
+    if (ok) addToast({ type: 'success', title: 'Version deleted' })
+    else addToast({ type: 'warning', title: 'Deleted locally', message: 'Backend unreachable — it may reappear on reload.' })
   }
 
   const formatDate = (iso: string) => {
@@ -267,9 +380,11 @@ export default function CVManager() {
             )}
           </div>
           <div className="flex items-center gap-4 text-sm text-text-secondary">
-            <span>{tailoredVersions.length} tailored versions</span>
+            <span>{tailoredVersions.length} tailored version{tailoredVersions.length === 1 ? '' : 's'}</span>
             <span className="text-text-muted">·</span>
-            <span className="text-text-muted">Last updated {formatDate('2025-01-07T16:00:00Z')}</span>
+            <span className="text-text-muted">
+              {masterUpdated ? `Master updated ${formatDate(masterUpdated)}` : 'Master from profile'}
+            </span>
           </div>
           <div className="flex gap-2">
             <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border-default text-text-secondary hover:bg-bg-tertiary transition-colors">
@@ -286,7 +401,7 @@ export default function CVManager() {
             </button>
           </div>
         </div>
-        <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} />
+        <input ref={fileInputRef} type="file" accept=".txt,.md,.text" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} />
       </motion.div>
 
       {/* ─── Master CV + Quick Actions ─── */}
@@ -336,7 +451,7 @@ export default function CVManager() {
               </div>
               {hasMasterCV && (
                 <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-xs text-text-muted">
-                  <span>Created: Jan 5, 2025</span>
+                  <span>{masterUpdated ? `Updated: ${formatDate(masterUpdated)}` : 'Source: profile default'}</span>
                   <span>Format: Text</span>
                   <span>Words: {wordCount}</span>
                   <span>Characters: {masterCV.length.toLocaleString()}</span>
@@ -372,16 +487,39 @@ export default function CVManager() {
         </motion.div>
       </div>
 
-      {/* ─── Tailored CV Versions ─── */}
+      {/* ─── Tailored Versions (CVs + cover letters, with history) ─── */}
       <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={3}>
-        <div className="flex items-center gap-2.5 mb-4">
-          <FileText size={18} className="text-accent-indigo" />
-          <h2 className="font-heading text-lg font-semibold text-text-primary">Tailored CV Versions</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2.5">
+            <History size={18} className="text-accent-indigo" />
+            <h2 className="font-heading text-lg font-semibold text-text-primary">Version History</h2>
+            <span className="px-2 py-0.5 rounded-full bg-bg-tertiary text-text-muted text-xs font-mono">
+              {visibleVersions.length}
+            </span>
+          </div>
+          {/* Type filter */}
+          <div className="inline-flex items-center gap-0.5 p-1 rounded-xl bg-bg-tertiary border border-border-subtle">
+            {([
+              { key: 'all', label: 'All' },
+              { key: 'cv', label: 'CVs' },
+              { key: 'cover_letter', label: 'Cover Letters' },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setFilterType(opt.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  filterType === opt.key ? 'bg-accent-indigo text-white' : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-        {tailoredVersions.length > 0 ? (
+        {visibleVersions.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <AnimatePresence>
-              {tailoredVersions.map((version, i) => (
+              {visibleVersions.map((version, i) => (
                 <motion.div
                   key={version.id}
                   initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -395,32 +533,37 @@ export default function CVManager() {
                       <h3 className="font-heading text-[15px] font-semibold text-text-primary truncate">{version.jobTitle}</h3>
                       <p className="text-xs text-text-secondary">{version.company}</p>
                     </div>
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-[3px] flex-shrink-0 ml-2"
-                      style={{
-                        borderColor: version.score >= 85 ? '#34D399' : version.score >= 70 ? '#FB923C' : '#FBBF24',
-                        background: 'var(--bg-secondary)'
-                      }}
-                    >
-                      <span className="font-mono text-xs font-bold text-text-primary">{version.score}</span>
+                    <div className="w-10 h-10 rounded-full bg-accent-indigo-muted flex items-center justify-center flex-shrink-0 ml-2">
+                      {version.type === 'cover_letter'
+                        ? <Mail size={16} className="text-accent-violet" />
+                        : <FileText size={16} className="text-accent-indigo" />}
                     </div>
                   </div>
                   <p className="text-xs text-text-muted mb-1">Generated {formatDate(version.createdAt)}</p>
                   <p className="text-xs text-text-secondary mb-3 line-clamp-2">{version.changes}</p>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium mb-3 ${version.status === 'used' ? 'bg-accent-emerald-muted text-accent-emerald' : 'bg-bg-tertiary text-text-muted'}`}>
-                    {version.status === 'used' ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-                    {version.status === 'used' ? 'Used for application' : 'Not used'}
-                  </span>
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent-indigo-muted text-accent-indigo font-mono">
+                      v{version.version}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${version.type === 'cover_letter' ? 'bg-accent-violet-muted text-accent-violet' : 'bg-bg-tertiary text-text-muted'}`}>
+                      {version.type === 'cover_letter' ? 'Cover letter' : 'CV'}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${version.status === 'used' ? 'bg-accent-emerald-muted text-accent-emerald' : 'bg-bg-tertiary text-text-muted'}`}>
+                      {version.status === 'used' ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+                      {version.status === 'used' ? 'Used' : 'Not used'}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-1 pt-3 border-t border-border-subtle">
                     <button onClick={() => setViewVersion(version)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors" title="View">
                       <Eye size={13} />
                     </button>
-                    <button onClick={() => setCompareVersion(version)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors" title="Compare">
+                    <button onClick={() => { setCompareBaseId('master'); setCompareVersion(version) }} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors" title="Compare">
                       <GitBranch size={13} />
                     </button>
                     <button onClick={() => handleCopy(version.content)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors" title="Copy">
                       <Copy size={13} />
                     </button>
-                    <button onClick={() => handleDownload(version.content, `${version.jobTitle.toLowerCase().replace(/\s+/g, '-')}-cv.txt`)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors" title="Download">
+                    <button onClick={() => downloadVersion(version)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors" title="Download PDF">
                       <Download size={13} />
                     </button>
                     <button onClick={() => setDeleteVersion(version.id)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-text-muted hover:text-accent-rose hover:bg-accent-rose-muted transition-colors ml-auto" title="Delete">
@@ -498,26 +641,42 @@ export default function CVManager() {
         {compareVersion && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setCompareVersion(null)}>
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} transition={{ duration: 0.2, ease: easeOut }} className="bg-bg-elevated rounded-card-lg border border-border-subtle max-w-5xl w-full max-h-[90vh] shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between p-5 border-b border-border-subtle flex-shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-border-subtle flex-shrink-0">
                 <div>
-                  <h3 className="font-heading text-lg font-semibold text-text-primary">CV Comparison</h3>
-                  <p className="text-xs text-text-muted mt-1">{compareVersion.jobTitle} at {compareVersion.company}</p>
+                  <h3 className="font-heading text-lg font-semibold text-text-primary">Side-by-Side Compare</h3>
+                  <p className="text-xs text-text-muted mt-1">
+                    {compareVersion.jobTitle} at {compareVersion.company} · v{compareVersion.version}
+                  </p>
                 </div>
-                <button onClick={() => setCompareVersion(null)} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"><X size={18} /></button>
+                <div className="flex items-center gap-2">
+                  {/* Baseline picker: Master CV or any other version of this document */}
+                  <label className="text-xs text-text-muted">Compare against:</label>
+                  <select
+                    value={compareBaseId}
+                    onChange={(e) => setCompareBaseId(e.target.value)}
+                    className="h-8 px-2 rounded-lg bg-bg-tertiary border border-border-default text-xs text-text-primary focus:border-accent-indigo focus:outline-none"
+                  >
+                    <option value="master">Master CV</option>
+                    {compareSiblings.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        v{s.version} · {formatDate(s.createdAt)}
+                      </option>
+                    ))}
+                  </select>
+                  <button onClick={() => setCompareVersion(null)} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"><X size={18} /></button>
+                </div>
               </div>
               <div className="p-5 overflow-auto flex-1">
-                <DiffViewer master={masterCV} tailored={compareVersion.content} />
-                <div className="flex items-center gap-6 mt-4 text-xs text-text-secondary">
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-accent-emerald" /> Master (unchanged)</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-accent-indigo" /> Tailored version</span>
-                </div>
-                <div className="mt-3 p-3 rounded-lg bg-accent-emerald-muted text-xs text-accent-emerald flex items-center gap-2">
-                  <CheckCircle2 size={14} /> No fabricated experience detected — all content derived from Master CV
-                </div>
+                <DiffViewer
+                  baseLabel={compareBase ? `v${compareBase.version} · ${formatDate(compareBase.createdAt)}` : 'Master CV'}
+                  base={compareBase ? compareBase.content : masterCV}
+                  targetLabel={`v${compareVersion.version} · ${compareVersion.type === 'cover_letter' ? 'Cover letter' : 'Tailored CV'}`}
+                  target={compareVersion.content}
+                />
               </div>
               <div className="flex justify-end gap-3 p-5 border-t border-border-subtle flex-shrink-0">
                 <button onClick={() => handleCopy(compareVersion.content)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors"><Copy size={14} /> Copy Tailored Text</button>
-                <button onClick={() => handleDownload(compareVersion.content, `${compareVersion.jobTitle.toLowerCase().replace(/\s+/g, '-')}-cv.txt`)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors"><Download size={14} /> Download</button>
+                <button onClick={() => downloadVersion(compareVersion)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors"><Download size={14} /> Download PDF</button>
                 <button onClick={() => setCompareVersion(null)} className="px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Close</button>
               </div>
             </motion.div>
@@ -533,7 +692,9 @@ export default function CVManager() {
               <div className="flex items-center justify-between p-5 border-b border-border-subtle flex-shrink-0">
                 <div>
                   <h3 className="font-heading text-lg font-semibold text-text-primary">{viewVersion.jobTitle}</h3>
-                  <p className="text-xs text-text-muted mt-1">{viewVersion.company} · Score: {viewVersion.score}%</p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {viewVersion.company} · v{viewVersion.version} · {viewVersion.type === 'cover_letter' ? 'Cover letter' : 'CV'} · {formatDate(viewVersion.createdAt)}
+                  </p>
                 </div>
                 <button onClick={() => setViewVersion(null)} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"><X size={18} /></button>
               </div>
@@ -542,7 +703,7 @@ export default function CVManager() {
               </div>
               <div className="flex justify-end gap-3 p-5 border-t border-border-subtle flex-shrink-0">
                 <button onClick={() => handleCopy(viewVersion.content)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors"><Copy size={14} /> Copy</button>
-                <button onClick={() => handleDownload(viewVersion.content, `${viewVersion.jobTitle.toLowerCase().replace(/\s+/g, '-')}-cv.txt`)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors"><Download size={14} /> Download</button>
+                <button onClick={() => downloadVersion(viewVersion)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors"><Download size={14} /> Download PDF</button>
                 <button onClick={() => setViewVersion(null)} className="px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Close</button>
               </div>
             </motion.div>

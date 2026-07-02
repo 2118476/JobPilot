@@ -252,3 +252,9 @@ export async function saveDocuments(userId, docs) {
   await writeJson('documents.json', docs)
   return docs
 }
+export async function deleteDocument(userId, id) {
+  if (useDb(userId)) return await db.dbDeleteDocument(userId, id)
+  const docs = await readJson('documents.json', [])
+  await writeJson('documents.json', docs.filter((d) => d.id !== id))
+  return true
+}

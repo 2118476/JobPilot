@@ -199,6 +199,16 @@ export async function saveDocument(doc: Omit<SavedDoc, 'id' | 'created_at'>): Pr
   }
 }
 
+/** Permanently delete a saved CV/cover letter. Returns false if backend unreachable. */
+export async function deleteDocument(id: string): Promise<boolean> {
+  try {
+    await req(`/api/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }, 8000)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Load the candidate profile from the backend (single source of truth).
  *  Pass a track ('tech' | 'construction') to read a specific one; omit for active. */
 export async function getProfile(track?: string): Promise<Record<string, unknown> | null> {
