@@ -28,6 +28,7 @@ const ManualJob = lazy(() => import('@/pages/ManualJob'))
 const Coach = lazy(() => import('@/pages/Coach'))
 const ITILLearning = lazy(() => import('@/pages/ITILLearning'))
 const ConstructionProfile = lazy(() => import('@/pages/ConstructionProfile'))
+const Onboarding = lazy(() => import('@/pages/Onboarding'))
 
 // Loading fallback
 function PageLoader() {
@@ -214,6 +215,14 @@ export default function App() {
               element={
                 <Suspense fallback={<PageLoader />}>
                   <ConstructionProfile />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/onboarding"
+              element={
+                <Suspense fallback={<PageLoader />}>
+                  <Onboarding />
                 </Suspense>
               }
             />

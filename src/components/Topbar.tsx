@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
 import { useAuth } from '@/hooks/useAuth'
+import { useAuthStore } from '@/store/authStore'
 import { TrackSwitcher } from '@/components/TrackSwitcher'
 import { mockNotifications, mockUserProfile } from '@/data/mockData'
 
@@ -38,6 +39,8 @@ export function Topbar() {
   const location = useLocation()
   const { notificationBadge, setSearchOpen } = useUIStore()
   const { logout } = useAuth()
+  const authUser = useAuthStore((s) => s.user)
+  const displayName = authUser?.user_metadata?.full_name || authUser?.email?.split('@')[0] || mockUserProfile.full_name
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
@@ -192,14 +195,13 @@ export function Topbar() {
         <div className="relative" ref={userDropdownRef}>
           <button
             onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-            className="flex items-center justify-center w-9 h-9 rounded-full border-2 border-border-subtle overflow-hidden hover:border-border-default transition-colors"
+            className="flex items-center justify-center w-9 h-9 rounded-full border-2 border-border-subtle bg-accent-indigo-muted hover:border-border-default transition-colors"
             aria-label="User menu"
+            title={displayName}
           >
-            <img
-              src={mockUserProfile.avatar_url || '/avatar-default.png'}
-              alt={mockUserProfile.full_name}
-              className="w-full h-full object-cover"
-            />
+            <span className="text-xs font-bold text-accent-indigo">
+              {displayName.split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
+            </span>
           </button>
 
           <AnimatePresence>

@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react'
-import { getDocuments, deleteDocument as apiDeleteDocument } from '@/lib/api'
+import { getDocuments, deleteDocument as apiDeleteDocument, getProfile } from '@/lib/api'
 import { downloadAsPdf } from '@/lib/pdf'
 import { diffLines, diffStats } from '@/lib/diff'
 import { useUIStore } from '@/store/uiStore'
@@ -41,6 +41,50 @@ function persistMaster(text: string): string {
   return ts
 }
 
+// Build a plain-text master CV from the LOGGED-IN user's profile (so every
+// account sees their own CV here, never someone else's).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildMasterFromProfile(p: any): string {
+  if (!p || !p.full_name) return ''
+  const out: string[] = []
+  out.push(String(p.full_name).toUpperCase())
+  if (p.headline) out.push(p.headline)
+  const contact = [p.location, p.phone, p.email, p.website, p.github].filter(Boolean).join(' | ')
+  if (contact) out.push(contact)
+  if (p.summary) out.push('', 'PROFILE', p.summary)
+  const skillEntries = Object.entries(p.skills || {})
+  if (skillEntries.length) {
+    out.push('', 'KEY SKILLS')
+    for (const [cat, list] of skillEntries) out.push(`${cat}: ${(list as string[]).join(', ')}`)
+  }
+  if (Array.isArray(p.cards_certifications) && p.cards_certifications.length) {
+    out.push('', 'CARDS & CERTIFICATIONS')
+    for (const c of p.cards_certifications) out.push(`- ${c}`)
+  }
+  if (Array.isArray(p.experience) && p.experience.length) {
+    out.push('', 'EXPERIENCE')
+    for (const e of p.experience) {
+      out.push(`${e.role || ''}${e.company ? ` | ${e.company}` : ''}${e.dates ? ` | ${e.dates}` : ''}`)
+      if (e.detail) out.push(`- ${e.detail}`)
+    }
+  }
+  if (Array.isArray(p.projects) && p.projects.length) {
+    out.push('', 'PROJECTS')
+    for (const pr of p.projects) {
+      out.push(`${pr.name}${pr.year ? ` (${pr.year})` : ''}${pr.tech?.length ? ` — ${pr.tech.join(', ')}` : ''}`)
+      if (pr.detail) out.push(`- ${pr.detail}`)
+    }
+  }
+  if (Array.isArray(p.education) && p.education.length) {
+    out.push('', 'EDUCATION')
+    for (const e of p.education) {
+      out.push(`${e.degree || ''}${e.institution ? `, ${e.institution}` : ''}${e.dates ? ` (${e.dates})` : ''}`)
+      if (e.note) out.push(`  ${e.note}`)
+    }
+  }
+  return out.join('\n')
+}
+
 interface ActivityEntry {
   id: string
   action: string
@@ -49,63 +93,8 @@ interface ActivityEntry {
   actor: string
 }
 
-// ─── Mock Data ────────────────────────────────
-const masterCVContent = `MIHRETAB NEGA
-Junior Software Developer
-London, W3 | mihretabtesfahun2124@gmail.com | 07388 617 329 | mihretab.org | github.com/2118476
-
-PROFILE
-Junior Software Developer with strong experience in full-stack Java and React development, now expanding into .NET and cloud technologies. Delivered real-world projects involving APIs, SQL databases and cloud deployment, with a focus on usability, debugging and performance. A quick learner with an agile mindset, strong problem-solving skills and a commitment to delivering high-quality digital services with real impact.
-
-KEY SKILLS
-Languages & Frameworks: Java, Spring Boot, React.js, JavaScript, SQL, C# (learning), ASP.NET (learning)
-Databases: MySQL, PostgreSQL, SQL Server
-APIs & Cloud: REST APIs, Twilio (SMS & Voice), Azure DevOps (learning), environment variable config
-Deployment & Tools: Git, GitHub, Docker, Render, Vercel, Netlify, CI/CD pipelines (learning)
-Development Concepts: OOP, MVC, Agile/Scrum, microservices, authentication, version control
-Debugging & Testing: IntelliJ, VS Code, Postman, SonarCloud, API testing
-
-PROJECTS
-
-MMS — SMS & Voice Call Web App (2025)
-Tech: React, Spring Boot, MySQL, Twilio, Render, Vercel
-- Developed a full-stack communication app to send SMS, make/receive calls, and track call history.
-- Integrated Twilio APIs with dynamic callback URLs for both local and deployed environments.
-- Built backend call routing with TwiML and implemented server-side error handling.
-- Designed a responsive UI with accessibility, dark mode and animated feedback.
-
-Hair Salon Booking System — Final Year Project (2024)
-Tech: Java, Spring Boot, MySQL
-- Created a secure appointment booking platform with admin/user roles and login authentication.
-- Designed and optimised relational database schemas for performance.
-- Applied clean architecture and modular code practices.
-
-E-Learning Platform — "Coding for All" Group Project (2023)
-Tech: React, Spring Boot, MySQL
-- Built a coding lesson web app as part of a team using agile methodology.
-- Developed multiple frontend components and API integrations.
-- Contributed to sprint planning and a collaborative Git workflow.
-
-EDUCATION
-Brunel University London — BSc Computer Science
-Sept 2021 – June 2024
-Modules: Software Development, Algorithms, Cybersecurity, AI, Networking
-Final Year Project: Hair Salon Booking System
-
-Newham College of Further Education — Access to HE Diploma (Electronics & Software Engineering)
-Sept 2020 – June 2021
-Distinctions in Programming, Project Management and Web Design
-
-ADDITIONAL INFORMATION
-- Volunteering: National Citizen Service — team projects & video editing
-- Languages: English (fluent), Amharic (fluent), Tigrinya (basic)
-- Interests: Football, gym, AI experimentation
-- Learning Goals: Advancing C# and ASP.NET to expand backend expertise
-
-REFERENCES
-Available on request.`
-
-// Tailored versions are loaded from the backend (real AI-generated documents)
+// Tailored versions are loaded from the backend (real AI-generated documents);
+// the master CV is generated from the logged-in user's own profile.
 const initialTailoredVersions: CVVersion[] = []
 
 // ─── Animation ────────────────────────────────
@@ -197,9 +186,13 @@ function ConfirmationDialog({ open, title, message, onConfirm, onCancel }: { ope
 
 export default function CVManager() {
   const addToast = useUIStore((s) => s.addToast)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [profileData, setProfileData] = useState<any | null>(null)
   // Master CV persists in localStorage (with a real "last updated" timestamp).
+  // Default comes from the LOGGED-IN user's profile (fetched below), never a
+  // hardcoded CV — new accounts see their own data or an empty state.
   const [masterCV, setMasterCV] = useState(() => {
-    try { return localStorage.getItem(MASTER_KEY) || masterCVContent } catch { return masterCVContent }
+    try { return localStorage.getItem(MASTER_KEY) || '' } catch { return '' }
   })
   const [masterUpdated, setMasterUpdated] = useState<string | null>(() => {
     try { return localStorage.getItem(MASTER_TS_KEY) } catch { return null }
@@ -216,6 +209,27 @@ export default function CVManager() {
   const [deleteVersion, setDeleteVersion] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Load the logged-in user's profile; if there's no saved master CV yet,
+  // generate one from THEIR profile (blank profile → empty state + prompts).
+  useEffect(() => {
+    getProfile()
+      .then((p) => {
+        if (!p) return
+        setProfileData(p)
+        try {
+          if (!localStorage.getItem(MASTER_KEY)) {
+            const generated = buildMasterFromProfile(p)
+            if (generated) {
+              setMasterCV(generated)
+              setEditText(generated)
+            }
+          }
+        } catch { /* localStorage unavailable */ }
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load real AI-generated documents from the backend, grouped into version
   // histories: documents for the same job+type get version numbers (oldest = v1).
@@ -328,10 +342,15 @@ export default function CVManager() {
   }
 
   const handleCreateFromProfile = () => {
-    setMasterCV(masterCVContent)
-    setEditText(masterCVContent)
-    setMasterUpdated(persistMaster(masterCVContent))
-    addToast({ type: 'success', title: 'Master CV restored from profile' })
+    const generated = buildMasterFromProfile(profileData)
+    if (!generated) {
+      addToast({ type: 'warning', title: 'Profile is empty', message: 'Fill in your Career Profile first, then create your master CV from it.' })
+      return
+    }
+    setMasterCV(generated)
+    setEditText(generated)
+    setMasterUpdated(persistMaster(generated))
+    addToast({ type: 'success', title: 'Master CV created from your profile' })
   }
 
   // Download as a polished, send-ready PDF (was plain .txt).

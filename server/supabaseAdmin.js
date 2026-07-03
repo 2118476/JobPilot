@@ -36,3 +36,16 @@ export async function getUserFromToken(token) {
     return null
   }
 }
+
+/** Look up a user's email by their Supabase user id (service role). */
+export async function getUserEmailById(userId) {
+  const a = admin()
+  if (!a || !userId) return null
+  try {
+    const { data, error } = await a.auth.admin.getUserById(userId)
+    if (error) return null
+    return data?.user?.email || null
+  } catch {
+    return null
+  }
+}

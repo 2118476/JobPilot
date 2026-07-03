@@ -1,14 +1,32 @@
-import { useEffect } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sidebar } from '@/components/Sidebar'
 import { Topbar } from '@/components/Topbar'
 import { Footer } from '@/components/Footer'
 import { useUIStore } from '@/store/uiStore'
+import { getProfile } from '@/lib/api'
 
 export function Layout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { sidebarCollapsed, setPageTitle } = useUIStore()
+  const onboardingChecked = useRef(false)
+
+  // New-user gate: if the signed-in user's profile is blank (fresh account),
+  // send them to onboarding so the AI has THEIR details to work with.
+  // The owner (and local single-user mode) always has a filled profile.
+  useEffect(() => {
+    if (onboardingChecked.current) return
+    onboardingChecked.current = true
+    getProfile()
+      .then((p) => {
+        if (p && !(p as { full_name?: string }).full_name && window.location.hash !== '#/onboarding') {
+          navigate('/onboarding')
+        }
+      })
+      .catch(() => {})
+  }, [navigate])
 
   const pageTitleMap: Record<string, string> = {
     '/dashboard': 'Dashboard',

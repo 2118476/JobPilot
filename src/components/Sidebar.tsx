@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
 import { useAuth } from '@/hooks/useAuth'
+import { useAuthStore } from '@/store/authStore'
 import { mockUserProfile } from '@/data/mockData'
 
 const navItems = [
@@ -141,6 +142,10 @@ interface SidebarContentProps {
 }
 
 function SidebarContent({ sidebarCollapsed, toggleSidebar, onLogout, isMobile }: SidebarContentProps) {
+  // Show the ACTUAL signed-in account (falls back to the seed profile locally)
+  const authUser = useAuthStore((s) => s.user)
+  const displayName = authUser?.user_metadata?.full_name || authUser?.email?.split('@')[0] || mockUserProfile.full_name
+  const displayEmail = authUser?.email || mockUserProfile.email
   return (
     <>
       {/* Logo Area */}
@@ -170,18 +175,18 @@ function SidebarContent({ sidebarCollapsed, toggleSidebar, onLogout, isMobile }:
       <div className="border-t border-border-subtle p-3 space-y-2">
         {/* User Mini-Card */}
         <div className={`flex items-center gap-3 rounded-card-sm p-2 ${sidebarCollapsed && !isMobile ? 'justify-center' : ''}`}>
-          <img
-            src={mockUserProfile.avatar_url || '/avatar-default.png'}
-            alt={mockUserProfile.full_name}
-            className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-border-default"
-          />
+          <div className="w-8 h-8 rounded-full bg-accent-indigo-muted border border-border-default flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-bold text-accent-indigo">
+              {displayName.split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()}
+            </span>
+          </div>
           {(!sidebarCollapsed || isMobile) && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-text-primary truncate">
-                {mockUserProfile.full_name}
+                {displayName}
               </p>
               <p className="text-xs text-text-muted truncate">
-                {mockUserProfile.email}
+                {displayEmail}
               </p>
             </div>
           )}

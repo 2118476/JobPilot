@@ -6,7 +6,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { supabaseConfigured } from './supabaseAdmin.js'
+import { supabaseConfigured, getUserEmailById } from './supabaseAdmin.js'
 import * as db from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -203,6 +203,55 @@ const normTrack = (t) => (t === 'construction' ? 'construction' : 'tech')
 const LOCAL_USER = 'local'
 const useDb = (userId) => supabaseConfigured() && !!userId && userId !== LOCAL_USER
 
+// ─── Owner account vs everyone else ──────────────────────────
+// The rich seeded profiles above belong to the app OWNER only. The owner is
+// identified by email (OWNER_EMAIL env, defaulting to Mihretab's). Every other
+// signed-up user starts with a BLANK profile and is walked through onboarding
+// to provide their own details. Local single-user mode is always the owner.
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'mihretabtesfahun2124@gmail.com').toLowerCase()
+const ownerCache = new Map() // userId -> boolean
+
+async function isOwnerUser(userId) {
+  if (!useDb(userId)) return true // local JSON mode = the owner's own machine
+  if (ownerCache.has(userId)) return ownerCache.get(userId)
+  const email = await getUserEmailById(userId)
+  const owner = (email || '').toLowerCase() === OWNER_EMAIL
+  ownerCache.set(userId, owner)
+  return owner
+}
+
+/** Blank profile skeleton for new (non-owner) users — same shape, no data. */
+function emptyProfile(track) {
+  return {
+    full_name: '',
+    email: '',
+    phone: '',
+    website: '',
+    linkedin: '',
+    github: '',
+    location: '',
+    headline: '',
+    summary: '',
+    education: [],
+    experience: [],
+    skills: {},
+    projects: [],
+    preferences: {
+      titles: [],
+      seniority: [],
+      locations: [],
+      salary_min: 0,
+      salary_max: 0,
+      currency: 'GBP',
+      avoid: [],
+    },
+    goals: '',
+    skills_to_learn: [],
+    additional: {},
+    track: normTrack(track),
+  }
+}
+
 export async function getActiveTrack(userId) {
   if (useDb(userId)) return normTrack(await db.dbGetActiveTrack(userId))
   const meta = await readJson('meta.json', null)
@@ -223,7 +272,13 @@ export function listTracks() {
 
 export async function getProfile(userId, track) {
   const t = normTrack(track || (await getActiveTrack(userId)))
-  if (useDb(userId)) return (await db.dbGetProfile(userId, t)) || TRACK_DEFAULTS[t] || defaultProfile
+  if (useDb(userId)) {
+    const saved = await db.dbGetProfile(userId, t)
+    if (saved) return saved
+    // No saved profile yet: the owner gets the full seeded profile;
+    // everyone else gets a blank one (filled in via onboarding).
+    return (await isOwnerUser(userId)) ? (TRACK_DEFAULTS[t] || defaultProfile) : emptyProfile(t)
+  }
   return (await readJson(TRACK_FILES[t], null)) || TRACK_DEFAULTS[t] || defaultProfile
 }
 export async function saveProfile(userId, profile, track) {
