@@ -3,7 +3,6 @@
 // No native deps (works everywhere). Swap for SQLite/Postgres later.
 // ─────────────────────────────────────────────────────────────
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { supabaseConfigured, getUserEmailById } from './supabaseAdmin.js'
@@ -11,10 +10,6 @@ import * as db from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.join(__dirname, 'data')
-
-async function ensureDir() {
-  if (!existsSync(DATA_DIR)) await mkdir(DATA_DIR, { recursive: true })
-}
 
 async function readJson(name, fallback) {
   try {
@@ -26,8 +21,9 @@ async function readJson(name, fallback) {
 }
 
 async function writeJson(name, data) {
-  await ensureDir()
-  await writeFile(path.join(DATA_DIR, name), JSON.stringify(data, null, 2), 'utf8')
+  const full = path.join(DATA_DIR, name)
+  await mkdir(path.dirname(full), { recursive: true })
+  await writeFile(full, JSON.stringify(data, null, 2), 'utf8')
 }
 
 // ─── Canonical candidate profile (the real junior-grad profile) ───
@@ -203,6 +199,13 @@ const normTrack = (t) => (t === 'construction' ? 'construction' : 'tech')
 const LOCAL_USER = 'local'
 const useDb = (userId) => supabaseConfigured() && !!userId && userId !== LOCAL_USER
 
+// In local JSON mode, each non-owner account gets its own namespace under
+// server/data/users/<id>/ — so other logins NEVER see the owner's data.
+const userFile = (userId, name) =>
+  !userId || userId === LOCAL_USER
+    ? name
+    : path.join('users', String(userId).replace(/[^a-zA-Z0-9_-]/g, '-'), name)
+
 // ─── Owner account vs everyone else ──────────────────────────
 // The rich seeded profiles above belong to the app OWNER only. The owner is
 // identified by email (OWNER_EMAIL env, defaulting to Mihretab's). Every other
@@ -212,7 +215,10 @@ const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'mihretabtesfahun2124@gmail.com'
 const ownerCache = new Map() // userId -> boolean
 
 async function isOwnerUser(userId) {
-  if (!useDb(userId)) return true // local JSON mode = the owner's own machine
+  // Local JSON mode: only the 'local' store (owner email or tokenless callers)
+  // is the owner; mock-* accounts are regular users with blank starts.
+  if (!supabaseConfigured()) return !userId || userId === LOCAL_USER
+  if (userId === LOCAL_USER) return true // scheduler/CLI on a configured server
   if (ownerCache.has(userId)) return ownerCache.get(userId)
   const email = await getUserEmailById(userId)
   const owner = (email || '').toLowerCase() === OWNER_EMAIL
@@ -254,13 +260,13 @@ function emptyProfile(track) {
 
 export async function getActiveTrack(userId) {
   if (useDb(userId)) return normTrack(await db.dbGetActiveTrack(userId))
-  const meta = await readJson('meta.json', null)
+  const meta = await readJson(userFile(userId, 'meta.json'), null)
   return normTrack(meta?.active_track)
 }
 export async function setActiveTrack(userId, track) {
   const t = normTrack(track)
   if (useDb(userId)) { await db.dbSetActiveTrack(userId, t); return t }
-  await writeJson('meta.json', { active_track: t })
+  await writeJson(userFile(userId, 'meta.json'), { active_track: t })
   return t
 }
 export function listTracks() {
@@ -279,37 +285,39 @@ export async function getProfile(userId, track) {
     // everyone else gets a blank one (filled in via onboarding).
     return (await isOwnerUser(userId)) ? (TRACK_DEFAULTS[t] || defaultProfile) : emptyProfile(t)
   }
-  return (await readJson(TRACK_FILES[t], null)) || TRACK_DEFAULTS[t] || defaultProfile
+  const saved = await readJson(userFile(userId, TRACK_FILES[t]), null)
+  if (saved) return saved
+  return (await isOwnerUser(userId)) ? (TRACK_DEFAULTS[t] || defaultProfile) : emptyProfile(t)
 }
 export async function saveProfile(userId, profile, track) {
   const t = normTrack(track || (await getActiveTrack(userId)))
   if (useDb(userId)) return await db.dbSaveProfile(userId, t, profile)
-  await writeJson(TRACK_FILES[t], profile)
+  await writeJson(userFile(userId, TRACK_FILES[t]), profile)
   return profile
 }
 
 export async function getJobs(userId) {
   if (useDb(userId)) return await db.dbGetJobs(userId)
-  return await readJson('jobs.json', [])
+  return await readJson(userFile(userId, 'jobs.json'), [])
 }
 export async function saveJobs(userId, jobs) {
   if (useDb(userId)) return await db.dbSaveJobs(userId, jobs)
-  await writeJson('jobs.json', jobs)
+  await writeJson(userFile(userId, 'jobs.json'), jobs)
   return jobs
 }
 
 export async function getDocuments(userId) {
   if (useDb(userId)) return await db.dbGetDocuments(userId)
-  return await readJson('documents.json', [])
+  return await readJson(userFile(userId, 'documents.json'), [])
 }
 export async function saveDocuments(userId, docs) {
   if (useDb(userId)) return await db.dbSaveDocuments(userId, docs)
-  await writeJson('documents.json', docs)
+  await writeJson(userFile(userId, 'documents.json'), docs)
   return docs
 }
 export async function deleteDocument(userId, id) {
   if (useDb(userId)) return await db.dbDeleteDocument(userId, id)
-  const docs = await readJson('documents.json', [])
-  await writeJson('documents.json', docs.filter((d) => d.id !== id))
+  const docs = await readJson(userFile(userId, 'documents.json'), [])
+  await writeJson(userFile(userId, 'documents.json'), docs.filter((d) => d.id !== id))
   return true
 }
