@@ -283,7 +283,7 @@ export default function SkillGaps() {
                     color: '#F1F5F9',
                     fontSize: '13px',
                   }}
-                  formatter={(value: number, name: string, props: any) => {
+                  formatter={(value: number, name: string, props: { payload?: Record<string, unknown> }) => {
                     if (name === 'demand') return [`${value}% demand`, 'Market Demand']
                     if (name === 'userLevel') {
                       const have = props?.payload?.have

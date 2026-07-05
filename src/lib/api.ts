@@ -229,6 +229,34 @@ export async function saveProfile(profile: Record<string, unknown>, track?: stri
   }
 }
 
+// ─── Per-user search automation settings ─────────────────────
+
+export interface AutomationSettings {
+  enabled: boolean
+  query: string
+  location: string
+  min_score_alert: number
+  email_alerts: boolean
+  alert_email: string
+  frequency: 'twice_daily' | 'daily' | 'manual'
+}
+
+export async function getAutomationSettings(): Promise<AutomationSettings | null> {
+  try {
+    return await req<AutomationSettings>('/api/search-settings', undefined, 8000)
+  } catch {
+    return null
+  }
+}
+
+export async function saveAutomationSettings(s: Partial<AutomationSettings>): Promise<AutomationSettings | null> {
+  try {
+    return await req<AutomationSettings>('/api/search-settings', { method: 'PUT', body: JSON.stringify(s) }, 8000)
+  } catch {
+    return null
+  }
+}
+
 // ─── Career tracks (Software Developer vs Site Operative) ────
 
 export interface CareerTrack {

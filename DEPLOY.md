@@ -182,6 +182,22 @@ If all that works, **you're fully deployed and multi‑user.** 🚀
   on Render. To auto‑run searches, also add `ENABLE_SCHEDULER=true`.
 - **Custom domain:** add it in Netlify (frontend) and, if you like, Render (backend).
 
+## Production checklist (go-live)
+
+- [ ] **Supabase configured** — project created, `supabase/schema.sql` run (re-run after app
+      updates; it's additive and safe — it also creates the `search_settings` table)
+- [ ] **Render env vars** — `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` set;
+      `NODE_ENV=production` comes from `render.yaml`
+- [ ] **CORS locked** — set `ALLOWED_ORIGINS` on Render to your Netlify URL
+      (e.g. `https://your-app.netlify.app`)
+- [ ] **Netlify env vars** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL`
+- [ ] **Mock auth disabled** — `ALLOW_MOCK_AUTH` is NOT set: in production the backend refuses
+      to boot without Supabase, and the frontend shows a setup screen instead of mock login
+- [ ] **Optional keys** — Adzuna/Reed (more job sources), Resend (`RESEND_API_KEY`) for email
+- [ ] **Automation** — set `ENABLE_SCHEDULER=true` on Render for per-user auto-search; users
+      opt in from Search Settings → "Auto-Search & Alerts"
+- [ ] **Quality gates** — `npm run typecheck && npm run lint && npm run test && npm run build` pass
+
 ## Updating the live site later
 
 Just push to GitHub:

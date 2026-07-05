@@ -9,8 +9,8 @@ import { getTracks, setActiveTrack as apiSetActiveTrack, type CareerTrack } from
 // ─────────────────────────────────────────────────────────────
 
 const FALLBACK_TRACKS: CareerTrack[] = [
-  { id: 'tech', label: 'Software Developer', headline: 'Junior Software Developer | Java & React | ITIL 4 (studying)', icon: 'code' },
-  { id: 'construction', label: 'Site Operative', headline: 'Hoist Operator | Traffic Marshal | Banksman | CPCS Blue Card (since Aug 2020)', icon: 'hardhat' },
+  { id: 'tech', label: 'Tech / Office', headline: 'Professional and office-based roles', icon: 'code' },
+  { id: 'construction', label: 'Trades / Site', headline: 'Construction, trades and site-based roles', icon: 'hardhat' },
 ]
 
 interface TrackState {

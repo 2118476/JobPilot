@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import { useSessionBootstrap } from '@/hooks/useSessionBootstrap'
 import { Layout } from '@/components/Layout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -61,10 +62,36 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Production guard: a deployed build must use real Supabase auth. Mock
+// (localStorage) auth is for local development only, unless a demo build
+// explicitly sets VITE_ALLOW_MOCK_AUTH=true.
+const mockAuthBlocked =
+  import.meta.env.PROD && !isSupabaseConfigured && import.meta.env.VITE_ALLOW_MOCK_AUTH !== 'true'
+
+function SetupRequired() {
+  return (
+    <div className="flex items-center justify-center min-h-[100dvh] bg-bg-primary p-6">
+      <div className="max-w-lg w-full rounded-2xl border border-border-subtle bg-bg-secondary p-8 text-center">
+        <h1 className="font-heading text-xl font-semibold text-text-primary mb-3">Setup required</h1>
+        <p className="text-sm text-text-secondary leading-relaxed">
+          This deployment is missing its authentication configuration. Set{' '}
+          <code className="text-accent-indigo">VITE_SUPABASE_URL</code> and{' '}
+          <code className="text-accent-indigo">VITE_SUPABASE_ANON_KEY</code> in your hosting
+          environment and redeploy. See <span className="font-medium">DEPLOY.md</span> in the repository.
+        </p>
+        <p className="text-xs text-text-muted mt-4">
+          (For a credential-less demo build only, set VITE_ALLOW_MOCK_AUTH=true explicitly.)
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ─── App ─────────────────────────────────────
 
 export default function App() {
   useSessionBootstrap()
+  if (mockAuthBlocked) return <SetupRequired />
   return (
     <ErrorBoundary>
       <HashRouter>

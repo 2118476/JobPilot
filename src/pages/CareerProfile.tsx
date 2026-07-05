@@ -143,7 +143,7 @@ const initialData: ProfileData = {
   education: [
     {
       id: 'edu-001',
-      institution: 'Brunel University London',
+      institution: 'Example University',
       degree: 'BSc',
       field: 'Computer Science',
       startDate: '2021-09',
@@ -154,7 +154,7 @@ const initialData: ProfileData = {
     },
     {
       id: 'edu-002',
-      institution: 'Newham College of Further Education',
+      institution: 'Example College',
       degree: 'Access to HE Diploma',
       field: 'Electronics & Software Engineering',
       startDate: '2020-09',
@@ -685,7 +685,7 @@ export default function CareerProfile() {
             </div>
             <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm text-text-secondary">
               <span className="flex items-center gap-1.5"><MapPin size={14} className="text-text-muted" />{profile.personal.location || 'Not set'}</span>
-              <span className="flex items-center gap-1.5"><GraduationCap size={14} className="text-text-muted" />Computer Science, Brunel University London</span>
+              <span className="flex items-center gap-1.5"><GraduationCap size={14} className="text-text-muted" />Computer Science, Example University</span>
               <span className="flex items-center gap-1.5"><Briefcase size={14} className="text-accent-indigo" />Seeking: Junior Software Developer</span>
             </div>
             {/* Quick Actions */}
@@ -767,7 +767,7 @@ export default function CareerProfile() {
               </div>
               <div><label className="block text-xs font-medium text-text-secondary mb-1">LinkedIn URL</label><input {...personalForm.register('linkedin')} placeholder="linkedin.com/in/..." className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
               <div><label className="block text-xs font-medium text-text-secondary mb-1">GitHub URL</label><input {...personalForm.register('github')} placeholder="github.com/..." className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
-              <div><label className="block text-xs font-medium text-text-secondary mb-1">Portfolio URL</label><input {...personalForm.register('portfolio')} placeholder="mihretab.org" className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
+              <div><label className="block text-xs font-medium text-text-secondary mb-1">Portfolio URL</label><input {...personalForm.register('portfolio')} placeholder="yourportfolio.com" className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
             </div>
             <div><label className="block text-xs font-medium text-text-secondary mb-1">Personal Summary</label><textarea {...personalForm.register('summary')} rows={4} className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all resize-y" /></div>
             {personalForm.formState.errors.fullName && <p className="text-xs text-accent-rose">{personalForm.formState.errors.fullName.message}</p>}
@@ -1233,7 +1233,7 @@ export default function CareerProfile() {
           {profile.answers.map((item, idx) => (
             <motion.div key={idx} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.05 }} className="border border-border-subtle rounded-xl overflow-hidden">
               <button
-                onClick={() => setEditingSection(editingSection === `answer-${idx}` ? null : `answer-${idx}` as any)}
+                onClick={() => setEditingSection(editingSection === `answer-${idx}` ? null : `answer-${idx}` as unknown as SectionId)}
                 className="w-full flex items-center justify-between p-4 text-left hover:bg-bg-tertiary/30 transition-colors"
               >
                 <div className="flex items-center gap-2">

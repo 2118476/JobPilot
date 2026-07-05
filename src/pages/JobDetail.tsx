@@ -1245,43 +1245,6 @@ function GeneratorDrawer({ title, job, onClose, type, onGenerated }: {
   const [output, setOutput] = useState('')
   const [usedFallback, setUsedFallback] = useState(false)
 
-  const tailoredCV = `Mihretab Nega
-Junior Software Developer | Full-Stack Java & React
-London, W3 | mihretabtesfahun2124@gmail.com | 07388 617 329 | mihretab.org | github.com/2118476
-
-PROFILE
-${type === 'cv' ? `Computer Science graduate from Brunel University London (2024) with strong full-stack experience in ${job.match_analysis?.matched_skills.slice(0, 4).join(', ')}, now expanding into .NET and cloud. Delivered real-world projects involving APIs, SQL databases and cloud deployment, with a focus on usability and performance.` : ''}
-
-KEY SKILLS
-${job.match_analysis?.matched_skills.join(', ')}
-
-PROJECTS
-MMS — SMS & Voice Call Web App (2025) | React, Spring Boot, MySQL, Twilio
-- Full-stack app to send SMS, make/receive calls and track call history, integrating Twilio APIs with TwiML call routing.
-
-Hair Salon Booking System — Final Year Project (2024) | Java, Spring Boot, MySQL
-- Secure appointment booking platform with admin/user roles, login authentication and optimised database schemas.
-
-E-Learning Platform — Group Project (2023) | React, Spring Boot, MySQL
-- Coding-lesson web app built with a team using agile, contributing frontend components and API integrations.
-
-EDUCATION
-BSc Computer Science | Brunel University London | Sept 2021 - June 2024
-Access to HE Diploma (Electronics & Software Engineering) | Newham College | 2020 - 2021`
-
-  const coverLetter = `Dear ${job.company} Hiring Team,
-
-I am writing to apply for the ${job.title} position at ${job.company}. As a Computer Science graduate from Brunel University London with hands-on experience in ${job.match_analysis?.matched_skills.slice(0, 3).join(', ')}, I am keen to contribute as a junior software developer on your team.
-
-Through my projects I have built and deployed real applications — including a Java and Spring Boot hair salon booking system and a React and Spring Boot SMS & voice app integrating the Twilio API — which gave me practical experience with ${job.match_analysis?.matched_skills.slice(0, 2).join(' and ')}, REST APIs and SQL databases.
-
-${job.match_analysis?.missing_skills[0] ? `I am also actively learning ${job.match_analysis.missing_skills[0]}, and I pick up new tools quickly.` : ''}
-
-I would welcome the opportunity to discuss how I can contribute to ${job.company} and continue growing as a developer.
-
-Kind regards,
-Mihretab Nega`
-
   const handleGenerate = async () => {
     setPhase('loading')
     try {
@@ -1303,9 +1266,15 @@ Mihretab Nega`
       })
       // Reflect drafting status on the job
       updateJob(job.id, { status: type === 'cv' ? 'cv_drafted' : 'cl_drafted' })
-    } catch {
-      // Backend unreachable — fall back to the local template
-      setOutput(type === 'cv' ? tailoredCV : coverLetter)
+    } catch (e) {
+      // Never invent content: if the backend can't generate from the user's
+      // real profile, say so instead of showing a made-up document.
+      const msg = e instanceof Error ? e.message : String(e)
+      setOutput(
+        /422|PROFILE_INCOMPLETE|profile/i.test(msg)
+          ? 'Your profile is not complete yet, so nothing was generated.\n\nJobPilot only writes documents from your real saved details — go to Career Profile (or the onboarding wizard) and add your name, skills and background, then try again.'
+          : 'The document could not be generated — the backend is unreachable.\n\nStart it with: npm run dev:all, then try again. No template was substituted because JobPilot never invents CV content.',
+      )
       setUsedFallback(true)
     } finally {
       setPhase('result')

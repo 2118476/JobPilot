@@ -86,6 +86,48 @@ export async function dbGetDocuments(userId) {
   return data || []
 }
 
+// ─── Search automation settings ──────────────────────────────
+export async function dbGetSearchSettings(userId) {
+  const { data, error } = await admin()
+    .from('search_settings')
+    .select('data')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  return data?.data ?? null
+}
+
+export async function dbSaveSearchSettings(userId, settings) {
+  const { error } = await admin()
+    .from('search_settings')
+    .upsert(
+      { user_id: userId, enabled: !!settings.enabled, data: settings, updated_at: now() },
+      { onConflict: 'user_id' },
+    )
+  if (error) throw error
+  return settings
+}
+
+/** All users who turned auto-search on (scheduler loop). */
+export async function dbListAutomationUsers() {
+  const { data, error } = await admin()
+    .from('search_settings')
+    .select('user_id, data')
+    .eq('enabled', true)
+    .limit(200)
+  if (error) throw error
+  return (data || []).map((r) => ({ userId: r.user_id, settings: r.data }))
+}
+
+// ─── Full per-user data deletion ─────────────────────────────
+export async function dbDeleteUserData(userId) {
+  for (const table of ['jobs', 'documents', 'profiles', 'app_meta', 'search_settings']) {
+    const { error } = await admin().from(table).delete().eq('user_id', userId)
+    if (error) throw error
+  }
+  return true
+}
+
 export async function dbDeleteDocument(userId, id) {
   const { error } = await admin().from('documents').delete().eq('user_id', userId).eq('id', id)
   if (error) throw error

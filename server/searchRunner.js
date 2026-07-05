@@ -65,6 +65,7 @@ export async function runSearch(userId, { query, location, scoreLimit = 15 } = {
   for (const j of fetched) {
     const key = (j.source_url || j.id).toLowerCase()
     if (!byUrl.has(key)) {
+      j.user_id = userId // scope every stored job to its owner
       byUrl.set(key, j)
       added++
     }

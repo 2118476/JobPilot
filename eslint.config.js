@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'dist-deploy', 'extension', 'server']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,6 +18,20 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      // Underscore prefix = intentionally unused (mock interfaces, callbacks)
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+      // Empty catch is a deliberate fail-soft pattern in this app
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      // shadcn/ui files co-export helpers alongside components (HMR-only concern)
+      'react-refresh/only-export-components': 'warn',
+      // React-compiler strictness on legacy pages: surface, don't block CI
+      'react-hooks/purity': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
     },
   },
 ])

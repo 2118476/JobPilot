@@ -912,7 +912,7 @@ export default function Login() {
           {/* Mobile Footer */}
           <div className="lg:hidden mt-10 text-center space-y-1">
             <p className="text-xs text-text-muted">&copy; 2025 JobPilot AI</p>
-            <p className="text-xs text-text-muted">Private beta &middot; Built for Mihretab Nega</p>
+            <p className="text-xs text-text-muted">Private beta &middot; Built for Demo User</p>
           </div>
         </div>
       </div>

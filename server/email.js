@@ -8,21 +8,23 @@
 // ─────────────────────────────────────────────────────────────
 
 export function emailConfigured() {
-  return !!(process.env.RESEND_API_KEY && process.env.EMAIL_TO)
+  return !!process.env.RESEND_API_KEY
 }
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
-export async function sendEmail({ subject, html, text }) {
-  if (!emailConfigured()) return { sent: false, reason: 'not configured' }
+/** Send an email. `to` defaults to EMAIL_TO (single-user setups). */
+export async function sendEmail({ to, subject, html, text }) {
+  const recipient = to || process.env.EMAIL_TO
+  if (!emailConfigured() || !recipient) return { sent: false, reason: 'not configured' }
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
       body: JSON.stringify({
         from: process.env.EMAIL_FROM || 'JobPilot <onboarding@resend.dev>',
-        to: [process.env.EMAIL_TO],
+        to: [recipient],
         subject,
         html,
         text,
@@ -44,10 +46,10 @@ const wrap = (title, inner) =>
     <p style="color:#9ca3af;font-size:12px;margin-top:24px">Sent by JobPilot — your AI job-search co-pilot.</p>
   </div>`
 
-/** Email a digest of newly-found strong matches (85%+). */
-export async function notifyStrongMatches(jobs) {
+/** Email a digest of newly-found strong matches (>= minScore, default 85). */
+export async function notifyStrongMatches(jobs, { to, minScore = 85 } = {}) {
   if (!emailConfigured()) return { sent: false, reason: 'not configured' }
-  const strong = (jobs || []).filter((j) => (j.match_score || 0) >= 85)
+  const strong = (jobs || []).filter((j) => (j.match_score || 0) >= minScore)
   if (!strong.length) return { sent: false, reason: 'no strong matches' }
   const top = strong.slice(0, 10)
   const rows = top
@@ -60,6 +62,7 @@ export async function notifyStrongMatches(jobs) {
     .join('')
   const text = top.map((j) => `${j.title} — ${j.company} — ${j.match_score}%  ${j.source_url || ''}`).join('\n')
   return sendEmail({
+    to,
     subject: `JobPilot: ${strong.length} strong match${strong.length === 1 ? '' : 'es'} found`,
     html: wrap(`${strong.length} strong match${strong.length === 1 ? '' : 'es'}`, `<ul>${rows}</ul>`),
     text,
@@ -67,7 +70,7 @@ export async function notifyStrongMatches(jobs) {
 }
 
 /** Email upcoming application deadlines (next ~2 days). */
-export async function notifyDeadlines(jobs) {
+export async function notifyDeadlines(jobs, { to } = {}) {
   if (!emailConfigured()) return { sent: false, reason: 'not configured' }
   const now = Date.now()
   const soon = (jobs || []).filter((j) => {
@@ -88,6 +91,7 @@ export async function notifyDeadlines(jobs) {
     .map((j) => `${j.title} — ${j.company} — ${j.next_action || 'Action due'} (${new Date(j.next_action_date).toDateString()})`)
     .join('\n')
   return sendEmail({
+    to,
     subject: `JobPilot: ${soon.length} deadline${soon.length === 1 ? '' : 's'} coming up`,
     html: wrap('Upcoming deadlines', `<ul>${rows}</ul>`),
     text,

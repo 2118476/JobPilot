@@ -50,19 +50,30 @@ create table if not exists public.documents (
 );
 create index if not exists documents_user_created_idx on public.documents (user_id, created_at desc);
 
+-- ─── Search automation settings: one row per user ────────────────────────────
+-- (Safe to run on an existing database — additive only.)
+create table if not exists public.search_settings (
+  user_id    uuid        primary key references auth.users (id) on delete cascade,
+  enabled    boolean     not null default false,
+  data       jsonb       not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+create index if not exists search_settings_enabled_idx on public.search_settings (enabled) where enabled;
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- Row Level Security — each user only sees their own rows.
 -- (The backend service-role key bypasses these; they protect any direct access.)
 -- ════════════════════════════════════════════════════════════════════════════
-alter table public.profiles  enable row level security;
-alter table public.app_meta  enable row level security;
-alter table public.jobs      enable row level security;
-alter table public.documents enable row level security;
+alter table public.profiles        enable row level security;
+alter table public.app_meta        enable row level security;
+alter table public.jobs            enable row level security;
+alter table public.documents       enable row level security;
+alter table public.search_settings enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['profiles','app_meta','jobs','documents'] loop
+  foreach t in array array['profiles','app_meta','jobs','documents','search_settings'] loop
     execute format('drop policy if exists "own rows select" on public.%I;', t);
     execute format('drop policy if exists "own rows insert" on public.%I;', t);
     execute format('drop policy if exists "own rows update" on public.%I;', t);

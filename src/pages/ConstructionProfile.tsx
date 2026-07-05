@@ -38,48 +38,22 @@ interface ConstructionData {
   additional: { availability?: string; right_to_work?: string; languages?: string[] }
 }
 
+// Generic empty skeleton — the real data comes from the LOGGED-IN user's
+// construction-track profile (fetched below). Nothing personal is hardcoded.
 const FALLBACK: ConstructionData = {
-  full_name: 'Mihretab Nega',
-  email: 'mihretabtesfahun2124@gmail.com',
-  phone: '07388 617 329',
-  website: 'mihretab.org',
-  location: 'Acton, West London',
-  headline: 'Hoist Operator | Traffic Marshal | Banksman | CPCS Blue Card (since Aug 2020)',
-  summary:
-    'Reliable and safety-driven construction site operative with hands-on experience as a Hoist Driver and Traffic Marshal/Banksman. Holds a CPCS Blue (Competent Operator) card for Traffic Marshal and Hoist Operator, held since August 2020. Proven track record coordinating plant movements, managing gatehouse and traffic flow, and delivering clear radio and hand-signal communication on busy London construction sites.',
-  skills: {
-    'Plant & Hoist Operations': ['Passenger & goods hoist operation', 'Pre-use inspections', 'Load limits & safe travel', 'Loading bay & delivery coordination'],
-    'Traffic & Site Management': ['Traffic management & gatehouse control', 'Banksman hand-signals', 'Radio communication', 'Exclusion zones & hazard spotting'],
-    'Safety & Compliance': ['Permit to work & site inductions', 'RAMS & toolbox talks awareness', 'Emergency stop procedures', 'Housekeeping & waste segregation'],
-    'People & Reliability': ['Customer & subcontractor liaison', 'Site logs & basic paperwork', 'Teamwork', 'Punctuality & reliability'],
-  },
-  experience: [
-    {
-      role: 'Hoist Driver / Hoist Operator',
-      company: 'Various Construction Sites — London',
-      dates: '2024 – 2025',
-      detail:
-        'Operated passenger and goods hoists, adhering strictly to load limits and safe travel procedures. Performed pre-use inspections, reported defects and coordinated with site management for timely fixes. Managed queues and ensured safe access and egress for trades, maintaining clear radio communication throughout.',
-    },
-    {
-      role: 'Traffic Marshal / Banksman',
-      company: 'Construction Sites — West London',
-      dates: '2020 – 2025',
-      detail:
-        'Directed vehicle and plant movements using standard hand-signals and maintained exclusion zones. Controlled deliveries at the gatehouse, checked paperwork and kept accurate daily movement logs. Supported loading bay operations, liaising with drivers and trades to reduce waiting times and keep the site moving safely.',
-    },
-  ],
-  education: [{ institution: 'Brunel University London', degree: 'BSc (Hons) Computer Science', dates: 'Sept 2021 – June 2024' }],
-  cards_certifications: [
-    'CPCS Blue (Competent Operator) — Traffic / Vehicle Marshal — held since August 2020',
-    'CPCS Blue (Competent Operator) — Hoist Operator — held since August 2020',
-  ],
-  preferences: { titles: ['Hoist Operator', 'Traffic Marshal', 'Banksman', 'Vehicle Marshal', 'Gateman', 'Loading Bay Operative', 'Site Operative'] },
-  additional: {
-    availability: 'Immediate start — available for day or night shifts',
-    right_to_work: 'UK Right to Work (ILR / settled)',
-    languages: ['English (fluent)', 'Amharic (fluent)', 'Tigrinya (basic)'],
-  },
+  full_name: '',
+  email: '',
+  phone: '',
+  website: '',
+  location: '',
+  headline: 'Trades / site-work career track',
+  summary: '',
+  skills: {},
+  experience: [],
+  education: [],
+  cards_certifications: [],
+  preferences: { titles: [] },
+  additional: {},
 }
 
 const skillIcon: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -181,33 +155,38 @@ export default function ConstructionProfile() {
         </div>
       </motion.div>
 
-      {/* ── CPCS Cards (the headline credential) ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.12, duration: 0.3, ease: easeOut }}
-        className="rounded-card-lg border border-blue-500/30 bg-blue-500/10 p-5"
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <BadgeCheck size={18} className="text-blue-400" />
-          <h2 className="font-heading text-heading-lg font-semibold text-text-primary">CPCS Blue Card</h2>
-          <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-mono-xs font-medium">
-            Held since Aug 2020
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {data.cards_certifications.map((card) => (
-            <div key={card} className="flex items-start gap-2.5 p-3 rounded-lg bg-bg-secondary border border-border-subtle">
-              <ShieldCheck size={16} className="text-blue-400 mt-0.5 flex-shrink-0" />
-              <span className="text-body-sm text-text-primary">{card}</span>
-            </div>
-          ))}
-        </div>
-      </motion.div>
+      {/* ── Cards & certifications (from the user's own profile) ── */}
+      {data.cards_certifications.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12, duration: 0.3, ease: easeOut }}
+          className="rounded-card-lg border border-blue-500/30 bg-blue-500/10 p-5"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <BadgeCheck size={18} className="text-blue-400" />
+            <h2 className="font-heading text-heading-lg font-semibold text-text-primary">Cards & Certifications</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {data.cards_certifications.map((card) => (
+              <div key={card} className="flex items-start gap-2.5 p-3 rounded-lg bg-bg-secondary border border-border-subtle">
+                <ShieldCheck size={16} className="text-blue-400 mt-0.5 flex-shrink-0" />
+                <span className="text-body-sm text-text-primary">{card}</span>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Contact + Headline ── */}
       <Section delay={0.16}>
-        <h2 className="font-heading text-heading-lg font-semibold text-text-primary mb-1">{data.full_name}</h2>
+        {!data.full_name && (
+          <p className="text-body-sm text-text-muted mb-3">
+            No trades/site profile yet — switch to this track and fill in your details in{' '}
+            <a href="#/profile" className="text-accent-indigo hover:underline">Career Profile</a>.
+          </p>
+        )}
+        <h2 className="font-heading text-heading-lg font-semibold text-text-primary mb-1">{data.full_name || 'Your name'}</h2>
         <p className="text-body-md text-accent-amber font-medium mb-3">{data.headline}</p>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-body-sm text-text-secondary">
           <span className="flex items-center gap-1.5"><MapPin size={14} className="text-text-muted" />{data.location}</span>

@@ -16,8 +16,11 @@ services:
         value: gemini
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
-      - key: OWNER_EMAIL
-        value: mihretabtesfahun2124@gmail.com
+      - key: NODE_ENV
+        value: production
+      # Comma-separated list of allowed browser origins (your Netlify URL).
+      - key: ALLOWED_ORIGINS
+        sync: false
       # ── Secrets — set these in the Render dashboard (never commit them) ──
       - key: GEMINI_API_KEY
         sync: false

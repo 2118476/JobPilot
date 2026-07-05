@@ -31,7 +31,7 @@ const slug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 
 function baseJob(partial) {
   return {
-    user_id: 'user-001',
+    // user_id is assigned by the caller from the authenticated user
     remote_type: 'unknown',
     salary_currency: 'GBP',
     requirements: [],

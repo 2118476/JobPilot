@@ -1,18 +1,20 @@
 // ─────────────────────────────────────────────────────────────
 // auth.js — Express auth middleware
-// Supabase configured: requires a valid Bearer JWT, sets req.userId to
-// the authenticated Supabase user id (multi-user, Postgres).
-// NOT configured (local mode): still multi-account! The frontend's mock
-// auth sends a base64 token containing {id, email}. The OWNER_EMAIL
-// account (and tokenless callers like curl/scheduler) map to the 'local'
-// store — the owner's original data. Every other account gets its own
-// namespaced JSON store, starting blank (onboarding collects their info).
+//
+// Supabase configured (production): every protected route requires a
+// valid Bearer JWT; req.userId is the authenticated Supabase user id.
+//
+// Not configured (LOCAL DEVELOPMENT ONLY — see config.js, which refuses
+// to start in production without Supabase unless ALLOW_MOCK_AUTH=true):
+// the frontend's localStorage mock auth sends a base64 token {id,email}.
+// Each account maps to its own isolated JSON namespace. If OWNER_EMAIL is
+// set in the environment, that one account maps to the primary 'local'
+// store; tokenless callers (curl, the scheduler) also use 'local'.
+// No personal data is hardcoded here — identity comes from env/config.
 // ─────────────────────────────────────────────────────────────
 import { supabaseConfigured, getUserFromToken } from './supabaseAdmin.js'
 
 export const LOCAL_USER = 'local'
-
-const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'mihretabtesfahun2124@gmail.com').toLowerCase()
 
 /** Parse the localStorage-mock token (base64 JSON {id,email,ts}) — not a JWT. */
 function parseMockToken(token) {
@@ -28,13 +30,16 @@ export async function requireAuth(req, res, next) {
   const token = hdr.startsWith('Bearer ') ? hdr.slice(7).trim() : null
 
   if (!supabaseConfigured()) {
-    req.userId = LOCAL_USER // default: owner (curl, scheduler, extension)
+    const ownerEmail = (process.env.OWNER_EMAIL || '').toLowerCase()
+    req.userId = LOCAL_USER // tokenless callers: curl, scheduler
     if (token) {
       const p = parseMockToken(token)
       const email = String(p?.email || '').toLowerCase()
-      if (email && email !== OWNER_EMAIL) {
-        // A non-owner local account → its own isolated data namespace.
+      if (email && (!ownerEmail || email !== ownerEmail)) {
+        // A non-primary local account → its own isolated data namespace.
         req.userId = 'mock-' + String(p.id || email).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48)
+        req.userEmail = email
+      } else if (email) {
         req.userEmail = email
       }
     }

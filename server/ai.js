@@ -419,18 +419,27 @@ export async function tailorDocument(profile, job, type, opts = {}) {
 function templateDoc(profile, job, type) {
   const skills = Object.values(profile.skills || {}).flat().map((s) => s.replace(/\s*\(.*?\)\s*/g, '').trim())
   if (type === 'cover_letter') {
+    // Built ONLY from the user's saved profile — nothing invented.
+    const edu = (profile.education || [])[0]
+    const eduLine = edu ? ` As a ${edu.degree || 'graduate'}${edu.institution ? ` from ${edu.institution}` : ''},` : ''
+    const skillLine = skills.length ? ` with experience in ${skills.slice(0, 4).join(', ')}` : ''
+    const proj = (profile.projects || [])[0]
+    const exp = (profile.experience || [])[0]
+    const background = proj
+      ? `Through my projects — including ${proj.name} — I have gained practical, hands-on experience I can bring to this role.`
+      : exp
+      ? `In my time as ${exp.role}${exp.company ? ` at ${exp.company}` : ''}, I built practical experience directly relevant to this position.`
+      : ''
     return [
       `Dear ${job.company} Hiring Team,`,
       '',
-      `I am writing to apply for the ${job.title} position at ${job.company}. As a Computer Science graduate from Brunel University London with full-stack experience in ${skills.slice(0, 4).join(', ')}, I am keen to contribute as a junior software developer on your team.`,
-      '',
-      'Through my projects I have built and deployed real applications — including a Java and Spring Boot hair salon booking system, and a React and Spring Boot SMS & voice communication app integrating the Twilio API — giving me hands-on experience with REST APIs, SQL databases and cloud deployment.',
-      '',
-      `I would welcome the opportunity to discuss how I can contribute to ${job.company} and continue growing as a developer.`,
+      `I am writing to apply for the ${job.title} position at ${job.company}.${eduLine} I am keen to contribute to your team${skillLine}.`,
+      background ? `\n${background}\n` : '',
+      `I would welcome the opportunity to discuss how I can contribute to ${job.company}.`,
       '',
       'Kind regards,',
-      profile.full_name,
-    ].join('\n')
+      profile.full_name || '',
+    ].filter((l) => l !== '').join('\n')
   }
   const contact = [profile.location, profile.phone, profile.email, profile.website, profile.github].filter(Boolean).join(' | ')
   const exp = (profile.experience || [])

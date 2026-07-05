@@ -9,7 +9,7 @@ const links = [
 
 const external = [
   { label: 'GitHub', href: 'https://github.com/2118476/JobPilot', icon: Github },
-  { label: 'Portfolio', href: 'https://mihretab.org', icon: Globe },
+  { label: 'Portfolio', href: 'https://example.com', icon: Globe },
 ]
 
 export function Footer() {

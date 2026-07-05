@@ -378,8 +378,8 @@ export default function Reports() {
                       color: '#F1F5F9',
                       fontSize: '12px',
                     }}
-                    formatter={(value: number, _name: string, props: any) => {
-                      return [`${value} jobs`, props?.payload?.range]
+                    formatter={(value: number, _name: string, props: { payload?: Record<string, unknown> }) => {
+                      return [`${value} jobs`, String(props?.payload?.range ?? '')]
                     }}
                   />
                 </RePieChart>

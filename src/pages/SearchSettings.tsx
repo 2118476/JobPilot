@@ -22,7 +22,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { mockSearchSettings } from '@/data/mockData'
-import { searchJobs } from '@/lib/api'
+import { searchJobs, getAutomationSettings, saveAutomationSettings, type AutomationSettings } from '@/lib/api'
 import { useUIStore } from '@/store/uiStore'
 
 // ─────────────────────────────────────────────
@@ -165,6 +165,26 @@ const staggerItem = {
 export default function SearchSettings() {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
+
+  // ── LIVE automation settings (persisted to the backend, drives the scheduler) ──
+  const [automation, setAutomation] = useState<AutomationSettings>({
+    enabled: false, query: '', location: '', min_score_alert: 85,
+    email_alerts: false, alert_email: '', frequency: 'twice_daily',
+  })
+  const [automationSaving, setAutomationSaving] = useState(false)
+  useEffect(() => {
+    getAutomationSettings().then((s) => { if (s) setAutomation(s) })
+  }, [])
+  const saveAutomation = async (patch: Partial<AutomationSettings>) => {
+    const next = { ...automation, ...patch }
+    setAutomation(next)
+    setAutomationSaving(true)
+    const saved = await saveAutomationSettings(next)
+    setAutomationSaving(false)
+    if (saved) setAutomation(saved)
+    else addToast({ type: 'error', title: 'Could not save automation settings', message: 'Backend unreachable.' })
+  }
+
   const [settings, setSettings] = useState<SearchSettingsState>({
     search_active: mockSearchSettings.search_active,
     keywords: [...DEFAULT_KEYWORDS],
@@ -331,6 +351,108 @@ export default function SearchSettings() {
         <p className="text-body-md text-text-secondary mt-1">
           Configure your job search agent — when it runs, what it looks for, and where it searches.
         </p>
+      </motion.div>
+
+      {/* ── LIVE: Auto-search & email alerts (persisted per account) ── */}
+      <motion.div variants={staggerItem} className="rounded-card-lg border border-accent-indigo/25 bg-accent-indigo-muted/10 p-6">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => saveAutomation({ enabled: !automation.enabled })}
+              className={`relative w-[52px] h-[28px] rounded-full transition-colors duration-200 flex-shrink-0 ${
+                automation.enabled ? 'bg-accent-indigo' : 'bg-bg-tertiary border border-border-default'
+              }`}
+              aria-label="Toggle auto-search"
+            >
+              <motion.span
+                className="absolute top-[2px] left-[2px] w-6 h-6 rounded-full bg-white shadow-md"
+                animate={{ x: automation.enabled ? 24 : 0 }}
+                transition={{ duration: 0.2, ease: easeOutExpo }}
+              />
+            </button>
+            <div>
+              <h2 className="font-heading text-heading-lg font-semibold text-text-primary">Auto-Search & Alerts</h2>
+              <p className="text-body-xs text-text-muted">
+                Saved to your account — the scheduler runs searches for you and emails your matches.
+                {automationSaving && <span className="text-accent-indigo"> Saving…</span>}
+              </p>
+            </div>
+          </div>
+          <span className={`px-2.5 py-1 rounded-full text-[11px] font-medium ${automation.enabled ? 'bg-accent-emerald/[0.12] text-accent-emerald' : 'bg-bg-tertiary text-text-muted'}`}>
+            {automation.enabled ? 'Automation ON' : 'Automation OFF'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+          <div>
+            <label className="block text-body-sm font-medium text-text-secondary mb-1.5">Custom search query (optional)</label>
+            <input
+              value={automation.query}
+              onChange={(e) => setAutomation((p) => ({ ...p, query: e.target.value }))}
+              onBlur={() => saveAutomation({})}
+              placeholder="Leave empty to use your profile's target roles"
+              className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-body-sm font-medium text-text-secondary mb-1.5">Search location (optional)</label>
+            <input
+              value={automation.location}
+              onChange={(e) => setAutomation((p) => ({ ...p, location: e.target.value }))}
+              onBlur={() => saveAutomation({})}
+              placeholder="Leave empty to use your profile's preferred locations"
+              className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-body-sm font-medium text-text-secondary mb-1.5">Frequency</label>
+            <select
+              value={automation.frequency}
+              onChange={(e) => saveAutomation({ frequency: e.target.value as AutomationSettings['frequency'] })}
+              className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:outline-none"
+            >
+              <option value="twice_daily">Twice daily</option>
+              <option value="daily">Once daily</option>
+              <option value="manual">Manual only</option>
+            </select>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-body-sm font-medium text-text-secondary">Alert threshold</label>
+              <span className="text-mono-sm text-accent-indigo font-medium">{automation.min_score_alert}%+</span>
+            </div>
+            <input
+              type="range" min={50} max={100} step={5}
+              value={automation.min_score_alert}
+              onChange={(e) => setAutomation((p) => ({ ...p, min_score_alert: parseInt(e.target.value) }))}
+              onMouseUp={() => saveAutomation({})}
+              onTouchEnd={() => saveAutomation({})}
+              className="w-full h-2 mt-3 rounded-full appearance-none cursor-pointer bg-bg-elevated accent-accent-indigo"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-border-subtle/50">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={automation.email_alerts}
+              onChange={(e) => saveAutomation({ email_alerts: e.target.checked })}
+              className="w-4 h-4 rounded border-border-default bg-bg-tertiary text-accent-indigo"
+            />
+            <span className="text-body-sm text-text-primary">Email me strong matches & deadline digests</span>
+          </label>
+          {automation.email_alerts && (
+            <input
+              type="email"
+              value={automation.alert_email}
+              onChange={(e) => setAutomation((p) => ({ ...p, alert_email: e.target.value }))}
+              onBlur={() => saveAutomation({})}
+              placeholder="Alert email (empty = account email)"
+              className="flex-1 min-w-[220px] h-9 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
+            />
+          )}
+        </div>
       </motion.div>
 
       {/* ── Section 1: Master Switch ── */}

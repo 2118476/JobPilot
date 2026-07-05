@@ -1,15 +1,20 @@
 // ─────────────────────────────────────────────────────────────
-// store.js — tiny JSON-file persistence + canonical profile seed
-// No native deps (works everywhere). Swap for SQLite/Postgres later.
+// store.js — per-user persistence layer.
+// Supabase configured → Postgres rows scoped by user_id (production).
+// Not configured (local dev) → JSON files under server/data/, namespaced
+// per account (server/data/users/<id>/ for non-primary accounts).
+//
+// NOTE: no personal data is seeded here. Every user starts with a blank
+// profile and completes onboarding. Local data files are gitignored.
 // ─────────────────────────────────────────────────────────────
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { supabaseConfigured, getUserEmailById } from './supabaseAdmin.js'
+import { supabaseConfigured } from './supabaseAdmin.js'
 import * as db from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(__dirname, 'data')
+const DATA_DIR = process.env.JOBPILOT_DATA_DIR || path.join(__dirname, 'data')
 
 async function readJson(name, fallback) {
   try {
@@ -26,208 +31,30 @@ async function writeJson(name, data) {
   await writeFile(full, JSON.stringify(data, null, 2), 'utf8')
 }
 
-// ─── Canonical candidate profile (the real junior-grad profile) ───
-export const defaultProfile = {
-  full_name: 'Mihretab Nega',
-  email: 'mihretabtesfahun2124@gmail.com',
-  phone: '07388 617 329',
-  website: 'mihretab.org',
-  linkedin: '',
-  github: 'github.com/2118476',
-  location: 'London, W3',
-  headline: 'Junior Software Developer | Java & React | ITIL 4 (studying)',
-  summary:
-    'Junior Software Developer with strong experience in full-stack Java and React development, now expanding into .NET, cloud technologies and IT Service Management. Delivered real-world projects involving APIs, SQL databases and cloud deployment, with a focus on usability, debugging and performance. Currently studying ITIL 4 Foundation to formalise service management knowledge. A quick learner with an agile mindset, strong problem-solving skills and a commitment to delivering high-quality digital services with real impact.',
-  education: [
-    {
-      institution: 'Brunel University London',
-      degree: 'BSc Computer Science',
-      dates: 'Sept 2021 – June 2024',
-      note: 'Modules: Software Development, Algorithms, Cybersecurity, AI, Networking. Final Year Project: Hair Salon Booking System.',
-    },
-    {
-      institution: 'Newham College of Further Education',
-      degree: 'Access to HE Diploma (Electronics & Software Engineering)',
-      dates: 'Sept 2020 – June 2021',
-      note: 'Distinctions in Programming, Project Management and Web Design.',
-    },
-  ],
-  // Recent graduate — experience is project-based (see projects). No salaried dev role yet.
-  experience: [],
-  skills: {
-    'Languages & Frameworks': ['Java', 'Spring Boot', 'React.js', 'JavaScript', 'SQL', 'C# (learning)', 'ASP.NET (learning)'],
-    'Databases': ['MySQL', 'PostgreSQL', 'SQL Server'],
-    'APIs & Cloud': ['REST APIs', 'Twilio (SMS & Voice)', 'Azure DevOps (learning)'],
-    'Deployment & Tools': ['Git', 'GitHub', 'Docker', 'Render', 'Vercel', 'Netlify', 'CI/CD (learning)'],
-    'Development Concepts': ['OOP', 'MVC', 'Agile/Scrum', 'Microservices', 'Authentication', 'Version control'],
-    'Debugging & Testing': ['IntelliJ', 'VS Code', 'Postman', 'SonarCloud', 'API testing'],
-    'IT Service Management': ['ITIL 4 Foundation (studying)', 'Incident Management concepts', 'Service Desk principles'],
-  },
-  projects: [
-    {
-      name: 'MMS — SMS & Voice Call Web App',
-      year: '2025',
-      tech: ['React', 'Spring Boot', 'MySQL', 'Twilio', 'Render', 'Vercel'],
-      detail: 'Full-stack communication app to send SMS, make and receive calls, and track call history. Integrated Twilio APIs with dynamic callback URLs for both local and deployed environments, built backend call routing with TwiML and server-side error handling, and designed a responsive UI with accessibility, dark mode and animated feedback.',
-    },
-    {
-      name: 'Hair Salon Booking System (Final Year Project)',
-      year: '2024',
-      tech: ['Java', 'Spring Boot', 'MySQL'],
-      detail: 'Secure appointment booking platform with admin/user roles and login authentication. Designed and optimised relational database schemas for performance, applying clean architecture and modular code practices.',
-    },
-    {
-      name: 'E-Learning Platform — "Coding for All" (Group Project)',
-      year: '2023',
-      tech: ['React', 'Spring Boot', 'MySQL'],
-      detail: 'Coding-lesson web app built as a team using agile methodology. Developed multiple frontend components and API integrations, and contributed to sprint planning and a collaborative Git workflow.',
-    },
-  ],
-  certifications_in_progress: [
-    {
-      name: 'ITIL 4 Foundation',
-      issuer: 'AXELOS / PeopleCert',
-      status: 'studying',
-      expected: '2026',
-      note: 'Actively studying the ITIL 4 Foundation syllabus. Exam not yet taken — certificate pending.',
-    },
-  ],
-  preferences: {
-    titles: [
-      'Junior Software Developer', 'Graduate Developer', 'Junior Java Developer',
-      'Junior Full-Stack Developer', 'Junior React Developer', '.NET Developer',
-      'Application Support Analyst', 'Service Desk Analyst', 'IT Support Analyst',
-      'Civil Service Digital Developer', 'Public Sector Developer',
-    ],
-    seniority: ['Entry-level', 'Graduate', 'Junior'],
-    locations: ['London', 'Remote (UK)', 'Hybrid'],
-    salary_min: 25000,
-    salary_max: 45000,
-    currency: 'GBP',
-    avoid: ['Senior', 'Lead', 'Principal', 'Staff', 'Manager', '5+ years'],
-  },
-  goals: 'Advance skills in C# and ASP.NET, complete ITIL 4 Foundation certification, and grow from junior into a well-rounded full-stack software developer building high-quality digital services — including in the public sector.',
-  skills_to_learn: ['C#', 'ASP.NET', 'Azure DevOps', 'CI/CD', 'ITIL 4 Foundation (exam pending)'],
-  additional: {
-    volunteering: 'National Citizen Service (NCS) — team projects & video editing',
-    languages: ['English (fluent)', 'Amharic (fluent)', 'Tigrinya (basic)'],
-    interests: ['Football', 'Gym', 'AI experimentation'],
-  },
-}
-
-// ─── Second career track: Construction Site Operative ────────
-// Same person, different career hat. CPCS Blue card holder for Traffic
-// Marshal + Hoist Operator since August 2020. Modelled on the SAME schema
-// as the tech profile so every AI feature (scoring, CV/cover tailoring,
-// coach, interview prep) works for it with zero extra code.
-export const constructionProfile = {
-  full_name: 'Mihretab Nega',
-  email: 'mihretabtesfahun2124@gmail.com',
-  phone: '07388 617 329',
-  website: 'mihretab.org',
-  linkedin: '',
-  github: '',
-  location: 'Acton, West London',
-  headline: 'Hoist Operator | Traffic Marshal | Banksman | CPCS Blue Card (since Aug 2020)',
-  summary:
-    'Reliable and safety-driven construction site operative with hands-on experience as a Hoist Driver and Traffic Marshal/Banksman. Holds a CPCS Blue (Competent Operator) card for Traffic Marshal and Hoist Operator, held since August 2020. Proven track record coordinating plant movements, managing gatehouse and traffic flow, and delivering clear radio and hand-signal communication on busy London construction sites. Calm under pressure, punctual, and focused on maintaining a clean, compliant work area. Available for day or night shifts with immediate start.',
-  education: [
-    {
-      institution: 'Brunel University London',
-      degree: 'BSc (Hons) Computer Science',
-      dates: 'Sept 2021 – June 2024',
-      note: '',
-    },
-  ],
-  // Real, dated site work — this is genuine employment history.
-  experience: [
-    {
-      role: 'Hoist Driver / Hoist Operator',
-      company: 'Various Construction Sites — London',
-      dates: '2024 – 2025',
-      detail:
-        'Operated passenger and goods hoists, adhering strictly to load limits and safe travel procedures. Performed pre-use inspections, reported defects and coordinated with site management for timely fixes. Managed queues and ensured safe access and egress for trades, maintaining clear radio communication throughout.',
-    },
-    {
-      role: 'Traffic Marshal / Banksman',
-      company: 'Construction Sites — West London',
-      dates: '2020 – 2025',
-      detail:
-        'Directed vehicle and plant movements using standard hand-signals and maintained exclusion zones. Controlled deliveries at the gatehouse, checked paperwork and kept accurate daily movement logs. Supported loading bay operations, liaising with drivers and trades to reduce waiting times and keep the site moving safely.',
-    },
-  ],
-  skills: {
-    'Plant & Hoist Operations': ['Passenger & goods hoist operation', 'Pre-use inspections', 'Load limits & safe travel', 'Loading bay & delivery coordination'],
-    'Traffic & Site Management': ['Traffic management & gatehouse control', 'Banksman hand-signals', 'Radio communication', 'Exclusion zones & hazard spotting'],
-    'Safety & Compliance': ['Permit to work & site inductions', 'RAMS & toolbox talks awareness', 'Emergency stop procedures', 'Housekeeping & waste segregation'],
-    'People & Reliability': ['Customer & subcontractor liaison', 'Site logs & basic paperwork', 'Teamwork', 'Punctuality & reliability'],
-  },
-  // Empty projects (kept for schema parity with the tech profile).
-  projects: [],
-  cards_certifications: [
-    'CPCS Blue (Competent Operator) — Traffic / Vehicle Marshal — held since August 2020',
-    'CPCS Blue (Competent Operator) — Hoist Operator — held since August 2020',
-  ],
-  preferences: {
-    titles: ['Hoist Operator', 'Traffic Marshal', 'Banksman', 'Vehicle Marshal', 'Gateman', 'Loading Bay Operative', 'Site Operative'],
-    seniority: ['Operative', 'Skilled', 'Experienced'],
-    locations: ['London', 'West London', 'Acton'],
-    salary_min: 28000,
-    salary_max: 45000,
-    currency: 'GBP',
-    avoid: ['Unpaid', 'Apprentice'],
-  },
-  goals:
-    'Secure steady Hoist Operator and Traffic Marshal work on London construction sites, day or night shifts, alongside continuing software development.',
-  skills_to_learn: ['First Aid at Work', 'Fire Marshal', 'Asbestos Awareness', 'SSSTS'],
-  additional: {
-    availability: 'Immediate start — available for day or night shifts',
-    right_to_work: 'UK Right to Work (ILR / settled)',
-    languages: ['English (fluent)', 'Amharic (fluent)', 'Tigrinya (basic)'],
-    interests: ['Football', 'Gym'],
-  },
-}
-
-// ─── Track-aware, multi-user storage ─────────────────────────
-// Every function takes a userId (first arg). When Supabase is configured
-// AND the user is a real signed-in user, data lives in Postgres scoped to
-// that user. Otherwise it falls back to JSON files (single local user) —
-// so local dev, demos and static deploys keep working unchanged.
-const TRACK_FILES = { tech: 'profile.json', construction: 'profile.construction.json' }
-const TRACK_DEFAULTS = { tech: defaultProfile, construction: constructionProfile }
-const normTrack = (t) => (t === 'construction' ? 'construction' : 'tech')
-const LOCAL_USER = 'local'
+// ─── Users & namespacing ─────────────────────────────────────
+export const LOCAL_USER = 'local'
 const useDb = (userId) => supabaseConfigured() && !!userId && userId !== LOCAL_USER
 
-// In local JSON mode, each non-owner account gets its own namespace under
-// server/data/users/<id>/ — so other logins NEVER see the owner's data.
+// In local JSON mode, each non-primary account gets its own namespace under
+// server/data/users/<id>/ so accounts never see each other's data.
 const userFile = (userId, name) =>
   !userId || userId === LOCAL_USER
     ? name
     : path.join('users', String(userId).replace(/[^a-zA-Z0-9_-]/g, '-'), name)
 
-// ─── Owner account vs everyone else ──────────────────────────
-// The rich seeded profiles above belong to the app OWNER only. The owner is
-// identified by email (OWNER_EMAIL env, defaulting to Mihretab's). Every other
-// signed-up user starts with a BLANK profile and is walked through onboarding
-// to provide their own details. Local single-user mode is always the owner.
-const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'mihretabtesfahun2124@gmail.com').toLowerCase()
-const ownerCache = new Map() // userId -> boolean
+// ─── Career tracks ───────────────────────────────────────────
+const TRACK_FILES = { tech: 'profile.json', construction: 'profile.construction.json' }
+const normTrack = (t) => (t === 'construction' ? 'construction' : 'tech')
 
-async function isOwnerUser(userId) {
-  // Local JSON mode: only the 'local' store (owner email or tokenless callers)
-  // is the owner; mock-* accounts are regular users with blank starts.
-  if (!supabaseConfigured()) return !userId || userId === LOCAL_USER
-  if (userId === LOCAL_USER) return true // scheduler/CLI on a configured server
-  if (ownerCache.has(userId)) return ownerCache.get(userId)
-  const email = await getUserEmailById(userId)
-  const owner = (email || '').toLowerCase() === OWNER_EMAIL
-  ownerCache.set(userId, owner)
-  return owner
+export function listTracks() {
+  return [
+    { id: 'tech', label: 'Tech / Office', headline: 'Professional and office-based roles', icon: 'code' },
+    { id: 'construction', label: 'Trades / Site', headline: 'Construction, trades and site-based roles', icon: 'hardhat' },
+  ]
 }
 
-/** Blank profile skeleton for new (non-owner) users — same shape, no data. */
-function emptyProfile(track) {
+/** Blank profile skeleton — every new user starts here (onboarding fills it). */
+export function emptyProfile(track) {
   return {
     full_name: '',
     email: '',
@@ -246,6 +73,7 @@ function emptyProfile(track) {
       titles: [],
       seniority: [],
       locations: [],
+      work_styles: [],
       salary_min: 0,
       salary_max: 0,
       currency: 'GBP',
@@ -256,6 +84,11 @@ function emptyProfile(track) {
     additional: {},
     track: normTrack(track),
   }
+}
+
+/** A profile is "ready" for AI features once the essentials exist. */
+export function profileReady(profile) {
+  return !!(profile && profile.full_name)
 }
 
 export async function getActiveTrack(userId) {
@@ -269,25 +102,13 @@ export async function setActiveTrack(userId, track) {
   await writeJson(userFile(userId, 'meta.json'), { active_track: t })
   return t
 }
-export function listTracks() {
-  return [
-    { id: 'tech', label: 'Software Developer', headline: defaultProfile.headline, icon: 'code' },
-    { id: 'construction', label: 'Site Operative', headline: constructionProfile.headline, icon: 'hardhat' },
-  ]
-}
 
 export async function getProfile(userId, track) {
   const t = normTrack(track || (await getActiveTrack(userId)))
   if (useDb(userId)) {
-    const saved = await db.dbGetProfile(userId, t)
-    if (saved) return saved
-    // No saved profile yet: the owner gets the full seeded profile;
-    // everyone else gets a blank one (filled in via onboarding).
-    return (await isOwnerUser(userId)) ? (TRACK_DEFAULTS[t] || defaultProfile) : emptyProfile(t)
+    return (await db.dbGetProfile(userId, t)) || emptyProfile(t)
   }
-  const saved = await readJson(userFile(userId, TRACK_FILES[t]), null)
-  if (saved) return saved
-  return (await isOwnerUser(userId)) ? (TRACK_DEFAULTS[t] || defaultProfile) : emptyProfile(t)
+  return (await readJson(userFile(userId, TRACK_FILES[t]), null)) || emptyProfile(t)
 }
 export async function saveProfile(userId, profile, track) {
   const t = normTrack(track || (await getActiveTrack(userId)))
@@ -319,5 +140,61 @@ export async function deleteDocument(userId, id) {
   if (useDb(userId)) return await db.dbDeleteDocument(userId, id)
   const docs = await readJson(userFile(userId, 'documents.json'), [])
   await writeJson(userFile(userId, 'documents.json'), docs.filter((d) => d.id !== id))
+  return true
+}
+
+// ─── Per-user search automation settings ─────────────────────
+export const DEFAULT_SEARCH_SETTINGS = {
+  enabled: false,          // auto-search on a schedule
+  query: '',               // custom query ('' = derive from profile target titles)
+  location: '',            // '' = derive from profile preferences
+  min_score_alert: 85,     // only alert on matches at/above this score
+  email_alerts: false,     // send email digests
+  alert_email: '',         // where to send them ('' = account email)
+  frequency: 'twice_daily',
+}
+
+export async function getSearchSettings(userId) {
+  if (useDb(userId)) {
+    const s = await db.dbGetSearchSettings(userId)
+    return { ...DEFAULT_SEARCH_SETTINGS, ...(s || {}) }
+  }
+  const s = await readJson(userFile(userId, 'search_settings.json'), null)
+  return { ...DEFAULT_SEARCH_SETTINGS, ...(s || {}) }
+}
+export async function saveSearchSettings(userId, settings) {
+  const clean = { ...DEFAULT_SEARCH_SETTINGS, ...(settings || {}) }
+  if (useDb(userId)) return await db.dbSaveSearchSettings(userId, clean)
+  await writeJson(userFile(userId, 'search_settings.json'), clean)
+  return clean
+}
+
+/** Users with auto-search enabled (for the scheduler). */
+export async function listAutomationUsers() {
+  if (supabaseConfigured()) return await db.dbListAutomationUsers()
+  const s = await getSearchSettings(LOCAL_USER)
+  return s.enabled ? [{ userId: LOCAL_USER, settings: s }] : []
+}
+
+// ─── Per-user data export / deletion (GDPR-style) ────────────
+export async function exportUserData(userId) {
+  const [profileTech, profileConstruction, jobs, documents, settings] = await Promise.all([
+    getProfile(userId, 'tech'),
+    getProfile(userId, 'construction'),
+    getJobs(userId),
+    getDocuments(userId),
+    getSearchSettings(userId),
+  ])
+  return { exported_at: new Date().toISOString(), profiles: { tech: profileTech, construction: profileConstruction }, jobs, documents, search_settings: settings }
+}
+
+export async function deleteUserData(userId) {
+  if (useDb(userId)) return await db.dbDeleteUserData(userId)
+  // Local mode: overwrite with empty stores (files are per-account already)
+  await writeJson(userFile(userId, 'jobs.json'), [])
+  await writeJson(userFile(userId, 'documents.json'), [])
+  await writeJson(userFile(userId, TRACK_FILES.tech), emptyProfile('tech'))
+  await writeJson(userFile(userId, TRACK_FILES.construction), emptyProfile('construction'))
+  await writeJson(userFile(userId, 'search_settings.json'), DEFAULT_SEARCH_SETTINGS)
   return true
 }

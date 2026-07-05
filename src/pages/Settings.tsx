@@ -438,7 +438,7 @@ function AccountTab() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <Mail size={16} className="text-text-muted" />
-            <span className="text-body-sm text-text-primary">mihretab.nega@email.com</span>
+            <span className="text-body-sm text-text-primary">demo@jobpilot.ai</span>
           </div>
           <button
             onClick={() => setChangeEmailOpen(true)}
@@ -526,7 +526,7 @@ function AccountTab() {
                 <label className="block text-body-sm text-text-secondary mb-1.5">Current Email</label>
                 <input
                   type="email"
-                  defaultValue="mihretab.nega@email.com"
+                  defaultValue="demo@jobpilot.ai"
                   disabled
                   className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-subtle text-sm text-text-muted opacity-60 cursor-not-allowed"
                 />
@@ -1026,7 +1026,7 @@ function AboutTab() {
 
       <SettingsCard title="Built For">
         <p className="text-body-sm text-text-secondary">
-          <span className="font-medium text-text-primary">Mihretab Nega</span> — Private beta, single user mode
+          <span className="font-medium text-text-primary">Demo User</span> — Private beta, single user mode
         </p>
       </SettingsCard>
 

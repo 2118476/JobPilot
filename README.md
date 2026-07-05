@@ -42,6 +42,22 @@ npm run dev:all
 Get a free Gemini key at <https://aistudio.google.com/api-keys>. Without it, the app still
 runs using heuristic scoring + template documents.
 
+Local mode uses mock (localStorage) auth with **per-account data namespaces** — every login
+gets its own isolated profile/jobs/documents under `server/data/` (gitignored). No personal
+data ships in the source: every user starts blank and completes onboarding. In production
+the server **requires Supabase auth** and refuses to start without it.
+
+## Quality gates
+
+```bash
+npm run typecheck   # TypeScript
+npm run lint        # ESLint
+npm run test        # Vitest (backend API + UI tests)
+npm run test:server # backend tests only
+npm run test:ui     # frontend tests only
+npm run build       # production build
+```
+
 ## Deploy
 
 See **[DEPLOY.md](DEPLOY.md)** for a complete, beginner‑friendly walkthrough
