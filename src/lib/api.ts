@@ -229,6 +229,27 @@ export async function saveProfile(profile: Record<string, unknown>, track?: stri
   }
 }
 
+// ─── Own-data export / deletion (privacy) ─────────────────────
+
+/** Download-ready export of everything the current user has stored. */
+export async function exportData(): Promise<Record<string, unknown> | null> {
+  try {
+    return await req('/api/export', undefined, 15000)
+  } catch {
+    return null
+  }
+}
+
+/** Permanently delete ALL of the current user's stored data on the backend. */
+export async function deleteAllData(): Promise<boolean> {
+  try {
+    await req('/api/data', { method: 'DELETE' }, 15000)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ─── Per-user search automation settings ─────────────────────
 
 export interface AutomationSettings {

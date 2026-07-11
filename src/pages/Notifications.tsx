@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { getStats, getJobs, getDocuments, getProfile } from '@/lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bell,
@@ -25,7 +26,7 @@ import { formatDistanceToNow, isToday, isYesterday } from 'date-fns'
 // Types
 // ─────────────────────────────────────────────
 
-type NotificationType = 'strong_match' | 'closing_soon' | 'unapplied_match' | 'cv_ready' | 'cl_ready' | 'follow_up' | 'interview' | 'search_failed' | 'api_limit' | 'weekly_report'
+type NotificationType = 'strong_match' | 'closing_soon' | 'unapplied_match' | 'cv_ready' | 'cl_ready' | 'follow_up' | 'interview' | 'search_failed' | 'api_limit' | 'weekly_report' | 'profile_incomplete'
 
 interface NotificationItem {
   id: string
@@ -68,6 +69,7 @@ const notificationConfig: Record<NotificationType, { icon: typeof Award; color: 
   search_failed: { icon: AlertCircle, color: 'text-accent-rose', bgColor: 'bg-accent-rose-muted', label: 'Search Failed' },
   api_limit: { icon: Info, color: 'text-accent-rose', bgColor: 'bg-accent-rose-muted', label: 'API Limit' },
   weekly_report: { icon: BarChart3, color: 'text-accent-emerald', bgColor: 'bg-accent-emerald-muted', label: 'Weekly Report' },
+  profile_incomplete: { icon: Info, color: 'text-accent-indigo', bgColor: 'bg-accent-indigo-muted', label: 'Complete Profile' },
 }
 
 // ─────────────────────────────────────────────
@@ -265,6 +267,74 @@ type FilterTab = 'all' | 'unread' | 'jobs' | 'applications' | 'system'
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState<NotificationItem[]>(generateMockNotifications())
+
+  // Replace the demo items with REAL notifications derived from the account's
+  // live pipeline (deadlines, strong matches, interviews, generated documents,
+  // profile completeness). Demo items remain only when the backend is down.
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const [stats, jobs, docs, profile] = await Promise.all([getStats(), getJobs(), getDocuments(), getProfile()])
+      if (!alive || (!stats && !jobs && !docs)) return // backend unreachable → keep demo
+      const items: NotificationItem[] = []
+      const nowIso = new Date().toISOString()
+
+      if (profile && !(profile as { full_name?: string }).full_name) {
+        items.push({
+          id: 'real-profile', type: 'profile_incomplete', read: false, timestamp: nowIso,
+          title: 'Finish setting up your profile',
+          message: 'AI matching, CV generation and the coach all need your real details. Complete onboarding to unlock them.',
+          filterCategory: 'system',
+        })
+      }
+
+      for (const d of stats?.deadlines || []) {
+        items.push({
+          id: `real-deadline-${d.jobId}`, type: 'follow_up', read: false, timestamp: d.deadline,
+          title: `${d.action}: ${d.title}`,
+          message: `${d.company} — due ${new Date(d.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`,
+          filterCategory: 'applications',
+        })
+      }
+
+      const strong = (jobs || [])
+        .filter((j) => (j.match_score || 0) >= 85 && ['new', 'saved'].includes(j.status))
+        .slice(0, 6)
+      for (const j of strong) {
+        items.push({
+          id: `real-match-${j.id}`, type: j.status === 'new' ? 'strong_match' : 'unapplied_match',
+          read: false, timestamp: j.updated_at || nowIso,
+          title: `${j.match_score}% match: ${j.title}`,
+          message: `${j.company} — ${j.status === 'new' ? 'new strong match, worth a look.' : 'saved but not applied yet.'}`,
+          filterCategory: 'jobs',
+        })
+      }
+
+      for (const j of (jobs || []).filter((x) => x.status === 'interview').slice(0, 3)) {
+        items.push({
+          id: `real-interview-${j.id}`, type: 'interview', read: false, timestamp: j.updated_at || nowIso,
+          title: `Interview stage: ${j.title}`,
+          message: `${j.company} — prepare with the AI interview questions on the job page.`,
+          filterCategory: 'applications',
+        })
+      }
+
+      for (const d of (docs || []).slice(0, 5)) {
+        items.push({
+          id: `real-doc-${d.id}`, type: d.type === 'cover_letter' ? 'cl_ready' : 'cv_ready',
+          read: false, timestamp: d.created_at,
+          title: `${d.type === 'cover_letter' ? 'Cover letter' : 'CV'} ready: ${d.job_title || 'document'}`,
+          message: d.company ? `Generated for ${d.company} — download it from the CV Manager.` : 'Available in the CV Manager.',
+          filterCategory: 'applications',
+        })
+      }
+
+      items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      setNotifications(items.slice(0, 25))
+    })()
+    return () => { alive = false }
+  }, [])
+
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())

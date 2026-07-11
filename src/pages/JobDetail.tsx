@@ -31,6 +31,7 @@ import {
 import { mockJobs, mockProjects } from '@/data/mockData'
 import { tailorDocument, findCachedJob, interviewPrep, updateJob, saveDocument, getJobs, type InterviewQuestion } from '@/lib/api'
 import { downloadAsPdf } from '@/lib/pdf'
+import { jobVerdict, verdictClasses } from '@/lib/verdict'
 import { useUIStore } from '@/store/uiStore'
 import type { Job } from '@/types'
 
@@ -489,6 +490,17 @@ export default function JobDetail() {
 
                 {/* Tags */}
                 <div className="flex flex-wrap gap-2 mt-3">
+                  {(() => {
+                    const v = jobVerdict(job)
+                    return v ? (
+                      <span
+                        title={v.advice}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${verdictClasses(v)}`}
+                      >
+                        {v.label}
+                      </span>
+                    ) : null
+                  })()}
                   <span className="px-3 py-1 rounded-full text-xs bg-bg-tertiary text-text-secondary">
                     {job.job_type.replace('_', '-')}
                   </span>

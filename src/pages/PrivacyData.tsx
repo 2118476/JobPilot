@@ -28,6 +28,7 @@ import {
   mockSearchSettings,
 } from '@/data/mockData'
 import { useUIStore } from '@/store/uiStore'
+import { exportData, deleteAllData } from '@/lib/api'
 
 // ─────────────────────────────────────────────
 // Animation config
@@ -220,10 +221,14 @@ export default function PrivacyData() {
     setExpandedSection((prev) => (prev === id ? null : id))
   }
 
-  const handleExportAll = () => {
+  // Export the REAL account data from the backend; fall back to the local
+  // demo dataset only when the backend is unreachable.
+  const handleExportAll = async () => {
     setExportLoading(true)
-    setTimeout(() => {
-      const allData = {
+    const real = await exportData()
+    const allData =
+      real ?? {
+        note: 'Backend unreachable — this export contains local demo data only.',
         profile: mockUserProfile,
         jobs: mockJobs,
         cvs: mockTailoredCVs,
@@ -233,9 +238,13 @@ export default function PrivacyData() {
         settings: mockSearchSettings,
         exported_at: new Date().toISOString(),
       }
-      downloadJSON(allData, 'jobpilot-all-data.json')
-      setExportLoading(false)
-    }, 800)
+    downloadJSON(allData, 'jobpilot-data-export.json')
+    setExportLoading(false)
+    addToast({
+      type: real ? 'success' : 'warning',
+      title: real ? 'Your data has been exported' : 'Exported demo data',
+      message: real ? 'Everything stored for your account, as JSON.' : 'Start the backend to export your real account data.',
+    })
   }
 
   // Clear local app data (keeps the mock user registry so login still works).
@@ -248,12 +257,21 @@ export default function PrivacyData() {
     } catch { /* localStorage unavailable */ }
   }
 
-  const handleDeleteAll = () => {
+  const handleDeleteAll = async () => {
     if (deleteAllText === 'DELETE') {
       setDeleteAllOpen(false)
       setDeleteAllText('')
+      // Delete the account's data on the backend too (profile, jobs, documents,
+      // automation settings) — not just this browser's local storage.
+      const backendOk = await deleteAllData()
       clearLocalData()
-      addToast({ type: 'success', title: 'Data deleted', message: 'All local personal data has been cleared. Signing out…' })
+      addToast({
+        type: backendOk ? 'success' : 'warning',
+        title: 'Data deleted',
+        message: backendOk
+          ? 'All of your stored data has been erased. Signing out…'
+          : 'Local data cleared; backend was unreachable, so run it and delete again to erase server data.',
+      })
       setTimeout(() => {
         localStorage.removeItem('jobpilot_mock_session')
         window.location.hash = '#/'

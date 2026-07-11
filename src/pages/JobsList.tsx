@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { mockJobs } from '@/data/mockData'
 import { getJobs as apiGetJobs, searchJobs, updateJob } from '@/lib/api'
+import { jobVerdict, verdictClasses } from '@/lib/verdict'
 import type { Job } from '@/types'
 
 // ─── Utility: Score Color Helpers ──────────────────────────────────────
@@ -886,9 +887,20 @@ function JobCard({ job, isSelected, onToggleSelect, onSave, onSkip, isSaved, isS
               <StatusChip status={job.status} />
             </div>
 
-            {/* Row 4: Match explanation */}
+            {/* Row 4: AI verdict + match explanation */}
             {job.match_analysis?.explanation && (
               <p className="mt-2 text-sm text-text-secondary line-clamp-2 leading-relaxed">
+                {(() => {
+                  const v = jobVerdict(job)
+                  return v ? (
+                    <span
+                      title={v.advice}
+                      className={`inline-block mr-2 px-2 py-0.5 rounded-full text-[11px] font-semibold align-middle ${verdictClasses(v)}`}
+                    >
+                      {v.label}
+                    </span>
+                  ) : null
+                })()}
                 {job.match_analysis.explanation}
               </p>
             )}
