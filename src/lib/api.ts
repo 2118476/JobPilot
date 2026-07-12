@@ -229,6 +229,63 @@ export async function saveProfile(profile: Record<string, unknown>, track?: stri
   }
 }
 
+// ─── Job-specific AI assistant ────────────────────────────────
+
+export interface AssistantCitation { type: string; id: string; label: string }
+export interface AssistantAction { type: string; label: string; requiresConfirmation?: boolean }
+export interface JobChatResult {
+  message: { role: 'assistant'; content: string }
+  citations: AssistantCitation[]
+  suggestedActions: AssistantAction[]
+  ai: AIStatus
+  fallback?: boolean
+}
+
+/** Chat about ONE of the user's own jobs. Throws on failure (caller shows error). */
+export async function jobChat(
+  jobId: string,
+  messages: CoachMessage[],
+  opts: { includeOriginalPage?: boolean; detail?: boolean } = {},
+): Promise<JobChatResult> {
+  return req(`/api/assistant/jobs/${encodeURIComponent(jobId)}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ messages, ...opts }),
+  }, 90000)
+}
+
+// ─── CV import (profile extraction preview) ───────────────────
+
+export interface CvExtractionResult {
+  profile: Record<string, unknown>
+  fieldMetadata: Record<string, { confidence: number; sourceText: string }>
+  missingFields: string[]
+  warnings: string[]
+  suggestedTrack: 'tech' | 'construction'
+  ai: AIStatus
+}
+
+/** Upload a CV (PDF/DOCX) and get an extraction PREVIEW. Nothing is saved. */
+export async function importCv(file: File): Promise<CvExtractionResult> {
+  const auth = await authHeader()
+  const form = new FormData()
+  form.append('cv', file)
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 90000)
+  try {
+    const res = await fetch(`${BASE}/api/profile/import-cv`, {
+      method: 'POST',
+      body: form,
+      headers: auth, // no Content-Type — the browser sets the multipart boundary
+      signal: ctrl.signal,
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body.error || `${res.status} ${res.statusText}`)
+    return body as CvExtractionResult
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ─── Own-data export / deletion (privacy) ─────────────────────
 
 /** Download-ready export of everything the current user has stored. */

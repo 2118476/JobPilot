@@ -32,6 +32,7 @@ import { mockJobs, mockProjects } from '@/data/mockData'
 import { tailorDocument, findCachedJob, interviewPrep, updateJob, saveDocument, getJobs, type InterviewQuestion } from '@/lib/api'
 import { downloadAsPdf } from '@/lib/pdf'
 import { jobVerdict, verdictClasses } from '@/lib/verdict'
+import { JobAssistant } from '@/components/JobAssistant'
 import { useUIStore } from '@/store/uiStore'
 import type { Job } from '@/types'
 
@@ -747,6 +748,23 @@ export default function JobDetail() {
         </div>
       </motion.div>
 
+      {/* Section 3.5: Ask about this job (AI assistant) */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.42 }}
+      >
+        <JobAssistant
+          job={job}
+          onOpenCv={() => setCvDrawerOpen(true)}
+          onOpenCl={() => setClDrawerOpen(true)}
+          onPrepInterview={() => {
+            document.getElementById('interview-prep')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            handleInterviewPrep()
+          }}
+        />
+      </motion.div>
+
       {/* Section 4: Best Projects + CV Suggestions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Best Projects */}
@@ -932,10 +950,11 @@ export default function JobDetail() {
 
         {/* Interview Prep */}
         <motion.div
+          id="interview-prep"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.65 }}
-          className="rounded-card bg-bg-secondary border border-border-subtle p-6"
+          className="rounded-card bg-bg-secondary border border-border-subtle p-6 scroll-mt-24"
         >
           <div className="flex items-center justify-between gap-2 mb-5">
             <div className="flex items-center gap-2">

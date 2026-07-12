@@ -82,7 +82,7 @@ function profileText(p) {
 
 // Strip Markdown so generated documents read as plain, human-written text
 // (no **bold**, no "* " bullets, no # headings, no backticks).
-function deMarkdown(s) {
+export function deMarkdown(s) {
   return String(s || '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/__(.*?)__/g, '$1')
@@ -107,7 +107,7 @@ function jobText(job) {
 }
 
 // ─── Gemini REST call ────────────────────────────────────────
-async function geminiGenerate({ system, user, json, schema, model }) {
+export async function geminiGenerate({ system, user, json, schema, model }) {
   const { geminiKey, geminiModel } = cfg()
   const useModel = model || geminiModel
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent`
