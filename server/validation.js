@@ -67,6 +67,15 @@ export const schemas = {
   }),
 
   track: z.object({ track: z.enum(['tech', 'construction']) }),
+
+  jobChat: z.object({
+    messages: z
+      .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().min(1).max(2000) }))
+      .min(1)
+      .max(20),
+    includeOriginalPage: z.boolean().optional(),
+    detail: z.boolean().optional(),
+  }),
 }
 
 /** Express middleware: validate req.body against a schema (replaces body with parsed data). */

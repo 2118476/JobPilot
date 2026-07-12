@@ -11,7 +11,8 @@ developer + construction site operative) and an **ITIL 4 learning path**.
   Remotive, Arbeitnow, The Muse, Jobicy, GOV.UK Find a Job, Civil Service Jobs) and scores
   each 0–100 against your profile with Google Gemini.
 - **Tailored documents** — AI‑written CVs and cover letters, downloadable as polished **PDF**.
-- **AI career coach** and **interview prep**, grounded in your real profile + live pipeline.
+- **AI career coach**, **interview prep** and a **per-job AI assistant** (ask "should I apply?", "what am I missing?" about any saved job), all grounded in your real profile + live pipeline.
+- **CV upload** — import a PDF/DOCX CV to auto-fill your profile (reviewed before saving; nothing invented).
 - **Apply tracking** — one‑click apply that opens the posting, marks it applied, and sets a
   follow‑up reminder.
 - **Dual career tracks** and an **ITIL 4** 10‑level learning roadmap.

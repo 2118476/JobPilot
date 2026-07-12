@@ -20,6 +20,10 @@ import { rateLimit, aiRateLimit } from './rateLimit.js'
 import { runSearch, attachAnalysis } from './searchRunner.js'
 import { notifyStrongMatches } from './email.js'
 import { validate, schemas } from './validation.js'
+import multer from 'multer'
+import { jobChat } from './services/jobAssistantService.js'
+import { fetchJobPage } from './services/jobPageExtractor.js'
+import { extractTextFromUpload, runCvExtraction } from './services/cvImportService.js'
 
 export function createApp() {
   const app = express()
@@ -332,6 +336,69 @@ export function createApp() {
     } catch (e) {
       res.status(500).json({ error: String(e.message || e) })
     }
+  })
+
+  // ─── Job-specific AI assistant ───────────────────────────────
+  // Chat about ONE job. The job is resolved from the AUTHENTICATED user's
+  // own store — a job id belonging to someone else simply returns 404.
+  app.post('/api/assistant/jobs/:jobId/chat', requireAuth, aiRateLimit, validate(schemas.jobChat), async (req, res) => {
+    try {
+      const jobs = await getJobs(req.userId)
+      const job = jobs.find((j) => j.id === req.params.jobId)
+      if (!job) return res.status(404).json({ error: 'Job not found in your account.' })
+
+      const [profile, documents] = await Promise.all([getProfile(req.userId), getDocuments(req.userId)])
+
+      // Optionally fetch the ORIGINAL public listing (SSRF-protected).
+      let pageText = null
+      let pageNote = null
+      if (req.body.includeOriginalPage && job.source_url) {
+        try {
+          pageText = await fetchJobPage(job.source_url)
+        } catch (e) {
+          pageNote = `Original listing could not be read (${e.message}); using the stored description instead.`
+        }
+      }
+
+      const result = await jobChat({
+        job,
+        profile,
+        documents,
+        messages: req.body.messages,
+        pageText,
+        detail: !!req.body.detail,
+      })
+      if (pageNote) result.message.content = `${result.message.content}\n\n(${pageNote})`
+      res.json(result)
+    } catch (e) {
+      res.status(500).json({ error: 'The assistant could not answer right now — please try again.' , detail: String(e.message || '').slice(0, 120) })
+    }
+  })
+
+  // ─── CV upload → profile extraction PREVIEW ──────────────────
+  // Returns extracted data for the user to review/edit. NOTHING is saved
+  // here — the profile is only written when the user approves via the
+  // normal authenticated PUT /api/profile.
+  const cvUpload = multer({
+    storage: multer.memoryStorage(), // never written to disk — nothing to clean up or leak
+    limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  })
+  app.post('/api/profile/import-cv', requireAuth, aiRateLimit, (req, res) => {
+    cvUpload.single('cv')(req, res, async (err) => {
+      try {
+        if (err) {
+          const tooBig = err.code === 'LIMIT_FILE_SIZE'
+          return res.status(tooBig ? 413 : 400).json({ error: tooBig ? 'File too large — maximum size is 8 MB.' : 'Upload failed — please try again.' })
+        }
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded — attach a PDF or DOCX CV as "cv".' })
+        const { text } = await extractTextFromUpload(req.file.buffer, req.file.mimetype, req.file.originalname || '')
+        const result = await runCvExtraction(text)
+        res.json(result)
+      } catch (e) {
+        const msg = String(e.message || 'Could not process this file.')
+        res.status(/unsupported file type/i.test(msg) ? 415 : 422).json({ error: msg })
+      }
+    })
   })
 
   // ─── Search automation settings (per user) ───────────────────

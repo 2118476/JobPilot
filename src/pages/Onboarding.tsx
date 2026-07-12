@@ -8,6 +8,9 @@ import {
 import { saveProfile } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
+import { CvImportModal } from '@/components/CvImportModal'
+import { computeProfileCompletion } from '@/lib/profileCompletion'
+import { Upload } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────
 // Onboarding — collects a NEW user's details so job search and every
@@ -34,6 +37,7 @@ export default function Onboarding() {
 
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [cvOpen, setCvOpen] = useState(false)
 
   // Step 1 — basics
   const [fullName, setFullName] = useState(authUser?.user_metadata?.full_name || '')
@@ -59,6 +63,19 @@ export default function Onboarding() {
 
   const [error, setError] = useState('')
 
+  // Live, deterministic profile-completion score from the current wizard state.
+  const liveProfile = {
+    full_name: fullName, location, headline, summary,
+    skills: skills.length ? { core: skills } : {},
+    experience, projects: [], education,
+    preferences: {
+      titles, locations, seniority,
+      salary_min: salaryMin, salary_max: salaryMax,
+      work_styles: seniority,
+    },
+  }
+  const completion = computeProfileCompletion(liveProfile)
+
   const canNext = () => {
     if (step === 0) return fullName.trim().length > 1
     if (step === 3) return titles.length > 0
@@ -74,6 +91,27 @@ export default function Onboarding() {
     setStep((s) => Math.min(s + 1, STEPS.length - 1))
   }
   const back = () => { setError(''); setStep((s) => Math.max(s - 1, 0)) }
+
+  // Prefill the wizard from an uploaded CV (user already reviewed it in the modal).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const applyCvImport = (p: any) => {
+    if (p.full_name) setFullName(p.full_name)
+    if (p.headline) setHeadline(p.headline)
+    if (p.location) setLocation(p.location)
+    if (p.phone) setPhone(p.phone)
+    if (p.summary) setSummary(p.summary)
+    const flatSkills = Object.values(p.skills || {}).flat() as string[]
+    if (flatSkills.length) setSkills([...new Set(flatSkills)])
+    if (Array.isArray(p.education) && p.education.length) {
+      setEducation(p.education.map((e: EduEntry) => ({ institution: e.institution || '', degree: e.degree || '', dates: e.dates || '' })))
+    }
+    if (Array.isArray(p.experience) && p.experience.length) {
+      setExperience(p.experience.map((e: ExpEntry) => ({ role: e.role || '', company: e.company || '', dates: e.dates || '', detail: e.detail || '' })))
+    }
+    const prefTitles = (p.preferences?.titles as string[]) || []
+    if (prefTitles.length) setTitles([...new Set(prefTitles)])
+    addToast({ type: 'success', title: 'CV imported', message: 'Review the pre-filled details, then continue.' })
+  }
 
   const finish = async () => {
     if (!canNext()) {
@@ -137,6 +175,25 @@ export default function Onboarding() {
         </p>
       </div>
 
+      {/* Profile completion (deterministic — not AI-generated) */}
+      <div className="max-w-md mx-auto mb-6">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-body-xs text-text-muted">Profile {completion.percent}% complete</span>
+          {completion.missing.length > 0 && (
+            <span className="text-body-xs text-text-muted" title={completion.missing.map((m) => m.label).join(', ')}>
+              {completion.missing.length} item{completion.missing.length === 1 ? '' : 's'} left
+            </span>
+          )}
+        </div>
+        <div className="h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-accent-indigo to-accent-emerald"
+            animate={{ width: `${completion.percent}%` }}
+            transition={{ duration: 0.4, ease: easeOut }}
+          />
+        </div>
+      </div>
+
       {/* Step indicator */}
       <div className="flex items-center justify-center gap-2 mb-8">
         {STEPS.map((s, i) => (
@@ -171,6 +228,18 @@ export default function Onboarding() {
           >
             {step === 0 && (
               <div className="space-y-4">
+                {/* Shortcut: upload a CV to auto-fill the wizard */}
+                <button
+                  onClick={() => setCvOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-accent-indigo/40 bg-accent-indigo/[0.04] text-sm font-medium text-accent-indigo hover:bg-accent-indigo/[0.08] transition-colors"
+                >
+                  <Upload size={16} /> Upload your CV to fill your profile
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-border-subtle" />
+                  <span className="text-xs text-text-muted">or enter manually</span>
+                  <div className="flex-1 h-px bg-border-subtle" />
+                </div>
                 <Field label="Full name *" icon={User}>
                   <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Jane Smith" className={inputCls} />
                 </Field>
@@ -324,6 +393,12 @@ export default function Onboarding() {
       <p className="text-center text-body-xs text-text-muted mt-4">
         You can edit everything later in <span className="text-text-secondary">Career Profile</span>.
       </p>
+
+      <CvImportModal
+        open={cvOpen}
+        onClose={() => setCvOpen(false)}
+        onApply={(profile) => applyCvImport(profile)}
+      />
     </motion.div>
   )
 }
