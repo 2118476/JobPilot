@@ -67,7 +67,17 @@ interface DataSection {
   exportData: () => void
 }
 
-type WorkspaceArchive = Record<string, any>
+type ArchiveRecord = Record<string, unknown>
+
+interface WorkspaceArchive extends ArchiveRecord {
+  profiles?: { tech?: ArchiveRecord; construction?: ArchiveRecord }
+  jobs?: ArchiveRecord[]
+  documents?: ArchiveRecord[]
+  search_settings?: ArchiveRecord
+}
+
+const archiveRecord = (value: unknown): ArchiveRecord =>
+  value && typeof value === 'object' ? value as ArchiveRecord : {}
 
 function createDataSections(workspace: WorkspaceArchive | null): DataSection[] {
   const tech = workspace?.profiles?.tech || {}
@@ -75,7 +85,7 @@ function createDataSections(workspace: WorkspaceArchive | null): DataSection[] {
   const jobs = Array.isArray(workspace?.jobs) ? workspace.jobs : []
   const documents = Array.isArray(workspace?.documents) ? workspace.documents : []
   const projects = Array.isArray(tech.projects) ? tech.projects : []
-  const applications = jobs.filter((job: Record<string, any>) => ['applied', 'interview', 'technical_test', 'offer', 'rejected'].includes(job.status))
+  const applications = jobs.filter((job) => ['applied', 'interview', 'technical_test', 'offer', 'rejected'].includes(String(job.status)))
   const settings = workspace?.search_settings || {}
   const field = (label: string, value: unknown, sensitive = false) => ({ label, value: String(value || '—'), sensitive })
 
@@ -92,28 +102,31 @@ function createDataSections(workspace: WorkspaceArchive | null): DataSection[] {
       id: 'projects', icon: FolderOpen, title: 'Project Evidence',
       description: 'Projects Gemini can use as evidence when matching and coaching.',
       count: `${projects.length} project(s)`, created: 'From Career Profile', usedIn: 'AI Coach, job matching, CV tailoring',
-      fields: projects.slice(0, 8).map((project: Record<string, any>) => field(project.name || 'Project', (project.tech || []).join(', '))),
+      fields: projects.slice(0, 8).map((value) => {
+        const project = archiveRecord(value)
+        return field(String(project.name || 'Project'), Array.isArray(project.tech) ? project.tech.join(', ') : '')
+      }),
       exportData: () => downloadJSON(projects, 'jobpilot-projects.json'),
     },
     {
       id: 'jobs', icon: Briefcase, title: 'Job Pipeline',
       description: 'Jobs discovered, scored, saved and progressed in your account.',
       count: `${jobs.length} job(s)`, created: 'Updated by JobPilot Search', usedIn: 'Dashboard, Applications, Reports, AI Coach',
-      fields: [field('Total jobs', jobs.length), field('Strong matches', jobs.filter((job: Record<string, any>) => Number(job.match_score) >= 70).length), field('Applications', applications.length)],
+      fields: [field('Total jobs', jobs.length), field('Strong matches', jobs.filter((job) => Number(job.match_score) >= 70).length), field('Applications', applications.length)],
       exportData: () => downloadJSON(jobs, 'jobpilot-jobs.json'),
     },
     {
       id: 'documents', icon: FileText, title: 'Saved Documents',
       description: 'Generated CVs and cover letters available to Gemini as workspace context.',
       count: `${documents.length} document(s)`, created: 'Generated in CV Manager', usedIn: 'CV Manager, AI Coach, job assistant',
-      fields: documents.slice(0, 8).map((doc: Record<string, any>) => field(doc.job_title || (doc.type === 'cover_letter' ? 'Cover letter' : 'CV'), doc.company || doc.type)),
+      fields: documents.slice(0, 8).map((doc) => field(String(doc.job_title || (doc.type === 'cover_letter' ? 'Cover letter' : 'CV')), doc.company || doc.type)),
       exportData: () => downloadJSON(documents, 'jobpilot-documents.json'),
     },
     {
       id: 'applications', icon: Briefcase, title: 'Applications',
       description: 'Application and interview stages derived from your real job pipeline.',
       count: `${applications.length} application(s)`, created: 'Updated in Applications', usedIn: 'Applications, Dashboard, AI Coach',
-      fields: applications.slice(0, 8).map((job: Record<string, any>) => field(job.title || 'Role', `${job.company || 'Company'} · ${job.status}`)),
+      fields: applications.slice(0, 8).map((job) => field(String(job.title || 'Role'), `${job.company || 'Company'} · ${job.status}`)),
       exportData: () => downloadJSON(applications, 'jobpilot-applications.json'),
     },
     {
@@ -143,7 +156,8 @@ export default function PrivacyData() {
     exportData().then((data) => { if (data) setWorkspace(data) }).catch(() => {})
   }, [])
 
-  const recordCount = (workspace?.jobs?.length || 0) + (workspace?.documents?.length || 0) + (workspace?.profiles?.tech?.projects?.length || 0)
+  const projectCount = Array.isArray(workspace?.profiles?.tech?.projects) ? workspace.profiles.tech.projects.length : 0
+  const recordCount = (workspace?.jobs?.length || 0) + (workspace?.documents?.length || 0) + projectCount
   const dataSize = workspace ? `${Math.max(1, Math.round(JSON.stringify(workspace).length / 1024))} KB` : 'Loading…'
 
   const toggleSection = (id: string) => {

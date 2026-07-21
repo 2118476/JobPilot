@@ -81,6 +81,29 @@ describe('manual jobs', () => {
     const jobsB = await request(app).get('/api/jobs').set('Authorization', USER_B)
     expect(jobsB.body.length).toBe(0)
   })
+
+  it('previews a grounded score without adding another job', async () => {
+    const before = await request(app).get('/api/jobs').set('Authorization', USER_A)
+    const preview = await request(app)
+      .post('/api/jobs/manual/analyze')
+      .set('Authorization', USER_A)
+      .send({ title: 'Automation QA Engineer', company: 'Acme', description: 'Testing automation quality assurance role using Testing.' })
+    expect(preview.status).toBe(200)
+    expect(preview.body.job.match_analysis).toBeTruthy()
+    expect(preview.body.job.match_score).toBeTypeOf('number')
+
+    const after = await request(app).get('/api/jobs').set('Authorization', USER_A)
+    expect(after.body).toHaveLength(before.body.length)
+  })
+
+  it('requires a completed profile before previewing an AI score', async () => {
+    const preview = await request(app)
+      .post('/api/jobs/manual/analyze')
+      .set('Authorization', USER_B)
+      .send({ title: 'Site Operative', description: 'A detailed construction site operative listing for an applicant.' })
+    expect(preview.status).toBe(422)
+    expect(preview.body.code).toBe('PROFILE_INCOMPLETE')
+  })
 })
 
 describe('AI guards', () => {
@@ -228,12 +251,24 @@ describe('search settings (automation)', () => {
     const put = await request(app)
       .put('/api/search-settings')
       .set('Authorization', USER_A)
-      .send({ enabled: true, min_score_alert: 90, email_alerts: true, alert_email: 'a@test.local' })
+      .send({
+        enabled: true,
+        min_score_alert: 90,
+        email_alerts: true,
+        alert_email: 'a@test.local',
+        keywords: ['QA', 'Automation'],
+        preferred_locations: ['London'],
+        sources: ['adzuna', 'reed'],
+        daily_search_limit: 25,
+      })
     expect(put.status).toBe(200)
     expect(put.body.enabled).toBe(true)
 
     const a = await request(app).get('/api/search-settings').set('Authorization', USER_A)
     expect(a.body.min_score_alert).toBe(90)
+    expect(a.body.keywords).toEqual(['QA', 'Automation'])
+    expect(a.body.preferred_locations).toEqual(['London'])
+    expect(a.body.sources).toEqual(['adzuna', 'reed'])
 
     const b = await request(app).get('/api/search-settings').set('Authorization', USER_B)
     expect(b.body.enabled).toBe(false) // defaults — untouched by A
@@ -304,13 +339,18 @@ describe('production configuration guard', () => {
   })
   it('allows production with Supabase configured', () => {
     expect(() =>
-      assertProductionConfig({ NODE_ENV: 'production', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'k', GEMINI_API_KEY: 'g' }),
+      assertProductionConfig({ NODE_ENV: 'production', SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'k', GEMINI_API_KEY: 'g', ALLOWED_ORIGINS: 'https://jobpilot.example' }),
     ).not.toThrow()
   })
   it('allows an explicit mock-auth demo', () => {
     expect(() =>
-      assertProductionConfig({ NODE_ENV: 'production', ALLOW_MOCK_AUTH: 'true', GEMINI_API_KEY: 'g' }),
+      assertProductionConfig({ NODE_ENV: 'production', ALLOW_MOCK_AUTH: 'true', GEMINI_API_KEY: 'g', ALLOWED_ORIGINS: 'https://jobpilot.example' }),
     ).not.toThrow()
+  })
+  it('requires an exact frontend origin in production', () => {
+    const base = { NODE_ENV: 'production', ALLOW_MOCK_AUTH: 'true', GEMINI_API_KEY: 'g' }
+    expect(() => assertProductionConfig(base)).toThrow(/ALLOWED_ORIGINS/)
+    expect(() => assertProductionConfig({ ...base, ALLOWED_ORIGINS: '*' })).toThrow(/invalid|exact HTTP/)
   })
   it('is a no-op outside production', () => {
     expect(() => assertProductionConfig({ NODE_ENV: 'development' })).not.toThrow()

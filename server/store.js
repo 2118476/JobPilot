@@ -88,7 +88,25 @@ export function emptyProfile(track) {
 
 /** A profile is "ready" for AI features once the essentials exist. */
 export function profileReady(profile) {
-  return !!(profile && profile.full_name)
+  if (!profile || !String(profile.full_name || '').trim()) return false
+  const skills = profile.skills && typeof profile.skills === 'object'
+    ? Object.values(profile.skills).flat().filter(Boolean)
+    : []
+  const hasEvidence = !!(
+    String(profile.summary || '').trim() ||
+    skills.length ||
+    profile.experience?.length ||
+    profile.projects?.length ||
+    profile.education?.length ||
+    profile.certifications?.length ||
+    profile.cards_certifications?.length
+  )
+  const hasTarget = !!(
+    String(profile.headline || '').trim() ||
+    profile.preferences?.titles?.length ||
+    profile.experience?.some((item) => item?.role || item?.title)
+  )
+  return hasEvidence && hasTarget
 }
 
 export async function getActiveTrack(userId) {
@@ -152,6 +170,24 @@ export const DEFAULT_SEARCH_SETTINGS = {
   email_alerts: false,     // send email digests
   alert_email: '',         // where to send them ('' = account email)
   frequency: 'twice_daily',
+  keywords: [],
+  exclusions: [],
+  excluded_companies: [],
+  excluded_titles: [],
+  preferred_locations: [],
+  remote_preference: 'no_preference',
+  salary_min: 0,
+  salary_max: 0,
+  currency: 'GBP',
+  morning_time: '08:00',
+  evening_time: '18:00',
+  daily_search_limit: 30,
+  sources: ['adzuna', 'reed', 'govuk', 'civil-service', 'arbeitnow', 'themuse', 'jobicy', 'remotive'],
+  seniority_levels: [],
+  role_types: [],
+  work_arrangements: [],
+  date_posted_days: 7,
+  job_titles: [],
 }
 
 export async function getSearchSettings(userId) {

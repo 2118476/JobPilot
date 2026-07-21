@@ -20,6 +20,13 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { formatDistanceToNow, isToday, isYesterday } from 'date-fns'
+import { useUIStore } from '@/store/uiStore'
+import { useAuthStore } from '@/store/authStore'
+import {
+  dismissNotifications,
+  loadNotificationState,
+  markNotificationsRead,
+} from '@/lib/notificationState'
 
 // ─────────────────────────────────────────────
 // Types
@@ -79,6 +86,8 @@ type FilterTab = 'all' | 'unread' | 'jobs' | 'applications' | 'system'
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const setNotificationBadge = useUIStore((state) => state.setNotificationBadge)
+  const userId = useAuthStore((state) => state.user?.id)
 
   // Build notifications only from this account's live workspace.
   useEffect(() => {
@@ -86,6 +95,18 @@ export default function Notifications() {
     ;(async () => {
       const [stats, jobs, docs, profile] = await Promise.all([getStats(), getJobs(), getDocuments(), getProfile()])
       if (!alive || (!stats && !jobs && !docs)) return
+      let enabled = true
+      let typeSettings: Record<string, boolean> = {}
+      try {
+        enabled = JSON.parse(localStorage.getItem('jobpilot-inapp-notifs') || 'true') !== false
+        typeSettings = JSON.parse(localStorage.getItem('jobpilot-notification-types') || '{}')
+      } catch {
+        // Corrupt device preferences fall back to notifications enabled.
+      }
+      if (!enabled) {
+        setNotifications([])
+        return
+      }
       const items: NotificationItem[] = []
       const nowIso = new Date().toISOString()
 
@@ -139,17 +160,27 @@ export default function Notifications() {
         })
       }
 
+      const persisted = loadNotificationState(userId)
+      const readIds = new Set(persisted.readIds)
+      const dismissedIds = new Set(persisted.dismissedIds)
       items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      setNotifications(items.slice(0, 25))
+      setNotifications(items
+        .filter((item) => typeSettings[item.type] !== false && !dismissedIds.has(item.id))
+        .slice(0, 25)
+        .map((item) => ({ ...item, read: readIds.has(item.id) })))
     })()
     return () => { alive = false }
-  }, [])
+  }, [userId])
 
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const unreadCount = notifications.filter((n) => !n.read).length
+
+  useEffect(() => {
+    setNotificationBadge({ count: unreadCount, hasUnread: unreadCount > 0 })
+  }, [setNotificationBadge, unreadCount])
 
   const filteredNotifications = useMemo(() => {
     switch (activeFilter) {
@@ -188,14 +219,17 @@ export default function Notifications() {
   }, [filteredNotifications])
 
   const markAllRead = () => {
+    markNotificationsRead(userId, notifications.map((notification) => notification.id))
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
   }
 
   const markRead = (id: string) => {
+    markNotificationsRead(userId, [id])
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
   }
 
   const dismissNotification = (id: string) => {
+    dismissNotifications(userId, [id])
     setNotifications((prev) => prev.filter((n) => n.id !== id))
   }
 
@@ -209,11 +243,13 @@ export default function Notifications() {
   }
 
   const markSelectedRead = () => {
+    markNotificationsRead(userId, [...selectedIds])
     setNotifications((prev) => prev.map((n) => (selectedIds.has(n.id) ? { ...n, read: true } : n)))
     setSelectedIds(new Set())
   }
 
   const deleteSelected = () => {
+    dismissNotifications(userId, [...selectedIds])
     setNotifications((prev) => prev.filter((n) => !selectedIds.has(n.id)))
     setSelectedIds(new Set())
     setSelectMode(false)

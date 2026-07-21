@@ -158,7 +158,26 @@ function blankProfileData(): ProfileData {
   }
 }
 
-type BackendProfile = Record<string, any>
+type BackendEntry = Record<string, unknown>
+
+interface BackendProfile extends BackendEntry {
+  skills?: Record<string, unknown>
+  preferences?: BackendEntry
+  additional?: BackendEntry
+  education?: unknown[]
+  experience?: unknown[]
+  projects?: unknown[]
+  application_answers?: unknown[]
+}
+
+const asEntry = (value: unknown): BackendEntry =>
+  value && typeof value === 'object' ? value as BackendEntry : {}
+
+const asEntries = (value: unknown): BackendEntry[] =>
+  Array.isArray(value) ? value.map(asEntry) : []
+
+const asStringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map(String).filter(Boolean) : []
 
 function backendToProfile(raw: BackendProfile): ProfileData {
   const empty = blankProfileData()
@@ -169,8 +188,8 @@ function backendToProfile(raw: BackendProfile): ProfileData {
       level: /learning|studying|beginner/i.test(String(value)) ? 'Beginner' : 'Intermediate',
     })),
   }))
-  const preferences = raw.preferences || {}
-  const additional = raw.additional || {}
+  const preferences = asEntry(raw.preferences)
+  const additional = asEntry(raw.additional)
   return {
     personal: {
       fullName: String(raw.full_name || ''),
@@ -183,29 +202,31 @@ function backendToProfile(raw: BackendProfile): ProfileData {
       portfolio: String(raw.website || ''),
       summary: String(raw.summary || ''),
     },
-    education: (raw.education || []).map((entry: BackendProfile, index: number) => ({
+    education: asEntries(raw.education).map((entry, index: number) => ({
       id: String(entry.id || `edu-${index}`), institution: String(entry.institution || ''), degree: String(entry.degree || ''),
       field: String(entry.field || ''), startDate: String(entry.start_date || entry.dates || ''), endDate: String(entry.end_date || ''),
-      current: !!entry.current, grade: String(entry.grade || ''), modules: Array.isArray(entry.modules) ? entry.modules : [],
+      current: !!entry.current, grade: String(entry.grade || ''), modules: asStringList(entry.modules),
     })),
     skills: skills.length ? skills : empty.skills,
-    experience: (raw.experience || []).map((entry: BackendProfile, index: number) => ({
+    experience: asEntries(raw.experience).map((entry, index: number) => ({
       id: String(entry.id || `exp-${index}`), company: String(entry.company || ''), role: String(entry.role || ''),
       startDate: String(entry.start_date || entry.dates || ''), endDate: String(entry.end_date || ''), current: !!entry.current,
-      description: String(entry.detail || entry.description || ''), technologies: Array.isArray(entry.tech) ? entry.tech : [], isTech: entry.is_tech !== false,
+      description: String(entry.detail || entry.description || ''), technologies: asStringList(entry.tech), isTech: entry.is_tech !== false,
     })),
-    projects: (raw.projects || []).map((entry: BackendProfile, index: number) => ({
+    projects: asEntries(raw.projects).map((entry, index: number) => ({
       id: String(entry.id || `project-${index}`), name: String(entry.name || ''), description: String(entry.detail || entry.description || ''),
-      url: String(entry.url || entry.live_url || entry.github_url || ''), technologies: Array.isArray(entry.tech) ? entry.tech : [],
+      url: String(entry.url || entry.live_url || entry.github_url || ''), technologies: asStringList(entry.tech),
     })),
     preferences: {
-      titles: preferences.titles || [], industries: preferences.industries || [], locations: preferences.locations || [],
+      titles: asStringList(preferences.titles), industries: asStringList(preferences.industries), locations: asStringList(preferences.locations),
       salaryMin: preferences.salary_min ? String(preferences.salary_min) : '', salaryMax: preferences.salary_max ? String(preferences.salary_max) : '',
-      workArrangement: preferences.work_styles || preferences.work_arrangement || [], seniority: preferences.seniority || [],
-      jobTypes: preferences.job_types || [], rolesToAvoid: preferences.avoid || [],
+      workArrangement: asStringList(preferences.work_styles || preferences.work_arrangement), seniority: asStringList(preferences.seniority),
+      jobTypes: asStringList(preferences.job_types), rolesToAvoid: asStringList(preferences.avoid),
     },
-    goals: { careerGoal: String(raw.goals || ''), skillsToLearn: raw.skills_to_learn || [] },
-    answers: Array.isArray(raw.application_answers) && raw.application_answers.length ? raw.application_answers : empty.answers,
+    goals: { careerGoal: String(raw.goals || ''), skillsToLearn: asStringList(raw.skills_to_learn) },
+    answers: Array.isArray(raw.application_answers) && raw.application_answers.length
+      ? raw.application_answers as ProfileData['answers']
+      : empty.answers,
   }
 }
 
@@ -233,16 +254,16 @@ function profileToBackend(profile: ProfileData, existing: BackendProfile): Backe
     skills: Object.fromEntries(profile.skills.map((group) => [group.category, group.skills.map((skill) => skill.name)])),
     projects: profile.projects.map((entry) => ({ id: entry.id, name: entry.name, detail: entry.description, url: entry.url, tech: entry.technologies })),
     preferences: {
-      ...(existing.preferences || {}), titles: profile.preferences.titles, industries: profile.preferences.industries,
+      ...asEntry(existing.preferences), titles: profile.preferences.titles, industries: profile.preferences.industries,
       locations: profile.preferences.locations, salary_min: Number(profile.preferences.salaryMin) || 0,
-      salary_max: Number(profile.preferences.salaryMax) || 0, currency: existing.preferences?.currency || 'GBP',
+      salary_max: Number(profile.preferences.salaryMax) || 0, currency: String(existing.preferences?.currency || 'GBP'),
       work_styles: profile.preferences.workArrangement, seniority: profile.preferences.seniority,
       job_types: profile.preferences.jobTypes, avoid: profile.preferences.rolesToAvoid,
     },
     goals: profile.goals.careerGoal,
     skills_to_learn: profile.goals.skillsToLearn,
     application_answers: profile.answers,
-    additional: { ...(existing.additional || {}), right_to_work: profile.personal.rightToWork },
+    additional: { ...asEntry(existing.additional), right_to_work: profile.personal.rightToWork },
     track: 'tech',
   }
 }

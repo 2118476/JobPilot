@@ -59,8 +59,8 @@
       <label>Backend URL</label>
       <input id="backend" placeholder="http://localhost:8787" />
       <label>Access token (only if you enabled Supabase sign-in)</label>
-      <input id="token" placeholder="paste your JobPilot session token" />
-      <div class="muted">In local mode you can leave the token blank.</div>
+      <input id="token" type="password" autocomplete="off" placeholder="paste your JobPilot session token" />
+      <div class="muted">The token is kept only for this browser session and is never synced. Leave it blank in local mode.</div>
     </details>
 
     <script src="popup.js"></script>

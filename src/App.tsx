@@ -7,6 +7,7 @@ import { Layout } from '@/components/Layout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ToastContainer } from '@/components/ToastContainer'
 import { NetworkStatus } from '@/components/NetworkStatus'
+import { useTheme } from '@/hooks/useTheme'
 
 // Eagerly load Login (public route)
 import Login from '@/pages/Login'
@@ -91,6 +92,7 @@ function SetupRequired() {
 
 export default function App() {
   useSessionBootstrap()
+  useTheme()
   if (mockAuthBlocked) return <SetupRequired />
   return (
     <ErrorBoundary>

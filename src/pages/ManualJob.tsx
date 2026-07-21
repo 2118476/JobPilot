@@ -13,11 +13,11 @@ import {
   Info,
   AlertTriangle,
   Code,
-  FolderOpen,
   Award,
   Check,
 } from 'lucide-react'
-// mock data available if needed
+import { analyzeManualJob, createManualJob, type ManualJobInput } from '@/lib/api'
+import type { Job } from '@/types'
 
 // ─── Utility ───────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ function ScoreRing({ score, size = 100, strokeWidth = 6 }: {
   }, [score])
 
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <div className="score-ring relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" style={{ filter: `drop-shadow(0 0 20px ${color}30)` }}>
         <circle
           cx={size / 2} cy={size / 2} r={radius}
@@ -126,34 +126,27 @@ function ScoreBreakdownBar({ label, score, index }: { label: string; score: numb
   )
 }
 
-// ─── Mock Analysis Generators ──────────────────────────────────────────
+// ─── Grounded analysis presentation ───────────────────────────────────
 
-function generateMockAnalysis(_jobText: string) {
-  const matchedSkills = ['React', 'TypeScript', 'Node.js', 'PostgreSQL', 'AWS', 'REST APIs', 'Git']
-  const missingSkills = ['Docker', 'Kubernetes', 'GraphQL', 'Python']
-  const score = Math.floor(55 + Math.random() * 35)
+function analysisFromJob(job: Job) {
+  const analysis = job.match_analysis
+  const matchedSkills = analysis?.matched_skills || []
+  const missingSkills = analysis?.missing_skills || []
+  const score = job.match_score || analysis?.overall_score || 0
+  const explanation = analysis?.explanation || 'JobPilot could not produce a detailed explanation for this listing.'
 
   return {
     score,
     matchedSkills,
     missingSkills,
-    explanation: `This role is a **${getScoreLabel(score).toLowerCase()}** for your profile. The position requires ${matchedSkills.slice(0, 4).join(', ')} — all core skills from your experience. Your full-stack background and project portfolio align well with the role's expectations.`,
-    projects: [
-      { name: 'MMS — SMS & Voice Call Web App', relevance: 'Full-stack app showing Twilio API integration, call routing and React/Spring Boot' },
-      { name: 'Hair Salon Booking System', relevance: 'Final-year Java/Spring Boot project with secure authentication and database design' },
-      { name: 'E-Learning Platform', relevance: 'Team-built React/Spring Boot app demonstrating agile collaboration' },
-    ],
+    job,
+    explanation,
     scoreBreakdown: [
-      { label: 'Job Title Match', score: Math.min(100, score + 8) },
-      { label: 'Skill Match', score: Math.min(100, score + 5) },
-      { label: 'Experience Level', score: Math.min(100, score + 10) },
-      { label: 'Location Match', score: Math.min(100, score + 3) },
-      { label: 'Salary Match', score: Math.min(100, score + 2) },
-      { label: 'Industry Match', score: Math.min(100, score - 5) },
-      { label: 'Project Relevance', score: Math.min(100, score + 7) },
-      { label: 'Education Match', score: Math.min(100, score + 5) },
-      { label: 'Remote/Hybrid Fit', score: Math.min(100, score + 4) },
-      { label: 'Company Culture', score: Math.min(100, score - 2) },
+      { label: 'Overall Match', score: analysis?.overall_score || score },
+      { label: 'Skill Match', score: analysis?.skill_match_score || 0 },
+      { label: 'Experience Match', score: analysis?.experience_match_score || 0 },
+      { label: 'Location Match', score: analysis?.location_match_score || 0 },
+      { label: 'Salary Match', score: analysis?.salary_match_score || 0 },
     ],
   }
 }
@@ -170,46 +163,71 @@ export default function ManualJob() {
   const [optionalSource, setOptionalSource] = useState('Other')
   const [analysing, setAnalysing] = useState(false)
   const [analysisStep, setAnalysisStep] = useState(0)
-  const [analysisResult, setAnalysisResult] = useState<ReturnType<typeof generateMockAnalysis> | null>(null)
-  const [saved, setSaved] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<ReturnType<typeof analysisFromJob> | null>(null)
+  const [savedJob, setSavedJob] = useState<Job | null>(null)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const MAX_CHARS = 10000
-  const canAnalyse = activeTab === 'text' ? jobText.length >= 100 : jobUrl.length > 0 && jobUrl.startsWith('http')
+  const hasListing = activeTab === 'text' ? jobText.trim().length >= 100 : /^https?:\/\//i.test(jobUrl.trim())
+  const canAnalyse = optionalTitle.trim().length >= 2 && hasListing
 
   const analysisSteps = activeTab === 'url'
     ? ['Extracting job details...', 'Analysing requirements...', 'Matching with your profile...', 'Calculating score...']
     : ['Analysing requirements...', 'Matching with your profile...', 'Calculating score...', 'Generating recommendations...']
 
-  const handleAnalyse = () => {
+  const buildPayload = (): ManualJobInput => ({
+    title: optionalTitle.trim(),
+    company: optionalCompany.trim(),
+    description: activeTab === 'text' ? jobText.trim() : '',
+    source: optionalSource,
+    source_url: activeTab === 'url' ? jobUrl.trim() : '',
+  })
+
+  const handleAnalyse = async () => {
     if (!canAnalyse) return
     setError('')
     setAnalysing(true)
     setAnalysisStep(0)
     setAnalysisResult(null)
 
-    // Simulate step-by-step analysis
     let step = 0
-    const interval = setInterval(() => {
-      step++
+    const interval = window.setInterval(() => {
+      step = Math.min(step + 1, analysisSteps.length - 1)
       setAnalysisStep(step)
-      if (step >= analysisSteps.length) {
-        clearInterval(interval)
-        const result = generateMockAnalysis(jobText || jobUrl)
-        setAnalysisResult(result)
-        setAnalysing(false)
-      }
-    }, 800)
+    }, 900)
+    try {
+      const job = await analyzeManualJob(buildPayload())
+      setAnalysisResult(analysisFromJob(job))
+      setSavedJob(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'JobPilot could not analyse this listing. Please try again.')
+    } finally {
+      window.clearInterval(interval)
+      setAnalysing(false)
+    }
   }
 
-  const handleSaveToJobs = () => {
-    setSaved(true)
-    setTimeout(() => {
-      navigate('/jobs')
-    }, 1000)
+  const handleSaveToJobs = async (nextAction: 'stay' | 'cv' | 'cl' | 'open' = 'stay') => {
+    if (!analysisResult || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      const job = savedJob || await createManualJob(buildPayload())
+      setSavedJob(job)
+      if (nextAction === 'cv' || nextAction === 'cl') navigate(`/jobs/${job.id}?action=${nextAction}`)
+      if (nextAction === 'open') navigate(`/jobs/${job.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'JobPilot could not save this job. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleFillSample = () => {
+    setOptionalTitle('Junior Software Developer')
+    setOptionalCompany('BrightApps Ltd')
+    setOptionalSource('Sample listing')
     setJobText(`Junior Software Developer
 
 BrightApps Ltd - London (Hybrid)
@@ -375,10 +393,10 @@ Benefits:
           )}
         </AnimatePresence>
 
-        {/* Optional Fields */}
+        {/* Listing details */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Job Title (optional)</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Job Title <span className="text-accent-rose">*</span></label>
             <input
               type="text"
               value={optionalTitle}
@@ -434,7 +452,7 @@ Benefits:
         ) : (
           <>
             <Search size={16} />
-            Analyse Job
+            Analyse with JobPilot AI
           </>
         )}
       </motion.button>
@@ -523,7 +541,7 @@ Benefits:
                 transition={{ delay: 0.2 }}
                 className="font-heading text-xl font-semibold text-text-primary mt-4"
               >
-                {optionalTitle || 'Junior Software Developer'}
+                {analysisResult.job.title}
               </motion.h2>
               <motion.p
                 initial={{ opacity: 0 }}
@@ -531,7 +549,7 @@ Benefits:
                 transition={{ delay: 0.3 }}
                 className="text-sm text-text-secondary mt-1"
               >
-                {optionalCompany || 'BrightApps Ltd'}
+                {analysisResult.job.company}
               </motion.p>
             </div>
 
@@ -554,10 +572,9 @@ Benefits:
                 <Sparkles size={16} className="text-accent-indigo" />
                 <h3 className="font-heading text-sm font-semibold text-text-primary">Why This Job Matches You</h3>
               </div>
-              <div
-                className="text-sm text-text-secondary leading-relaxed prose prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: analysisResult.explanation.replace(/\*\*(.*?)\*\*/g, '<strong class="text-text-primary">$1</strong>') }}
-              />
+              <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
+                {analysisResult.explanation.replace(/\*\*/g, '')}
+              </p>
             </div>
 
             {/* Skills Analysis */}
@@ -590,33 +607,6 @@ Benefits:
               </div>
             </div>
 
-            {/* Project Recommendations */}
-            <div className="rounded-card bg-bg-secondary border border-border-subtle p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <FolderOpen size={16} className="text-accent-indigo" />
-                <h3 className="font-heading text-sm font-semibold text-text-primary">Recommended Projects</h3>
-              </div>
-              <div className="space-y-3">
-                {analysisResult.projects.map((proj, i) => (
-                  <motion.div
-                    key={proj.name}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 * i }}
-                    className="p-3 rounded-lg bg-bg-tertiary/50 border border-border-subtle"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-heading text-sm font-medium text-text-primary">{proj.name}</span>
-                      <span className="px-1.5 py-0.5 rounded bg-accent-indigo-muted text-accent-indigo text-[10px] font-medium">
-                        #{i + 1}
-                      </span>
-                    </div>
-                    <p className="text-xs text-text-secondary">{proj.relevance}</p>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-
             {/* Quick Actions */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -627,6 +617,8 @@ Benefits:
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
+                onClick={() => handleSaveToJobs('cv')}
+                disabled={saving}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-button bg-accent-indigo text-white text-sm font-medium hover:bg-accent-indigo-hover transition-all shadow-lg shadow-accent-indigo/20"
               >
                 <Wand2 size={15} />
@@ -635,6 +627,8 @@ Benefits:
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
+                onClick={() => handleSaveToJobs('cl')}
+                disabled={saving}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-button border border-border-default text-text-secondary hover:bg-bg-tertiary hover:text-text-primary text-sm font-medium transition-all"
               >
                 <FileTextIcon size={15} />
@@ -643,29 +637,31 @@ Benefits:
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={handleSaveToJobs}
+                onClick={() => handleSaveToJobs('stay')}
+                disabled={saving}
                 className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-button text-sm font-medium transition-all ${
-                  saved
+                  savedJob
                     ? 'bg-accent-emerald/20 text-accent-emerald border border-accent-emerald/30'
                     : 'border border-border-default text-text-secondary hover:bg-bg-tertiary hover:text-text-primary'
                 }`}
               >
                 <Bookmark size={15} />
-                {saved ? 'Saved!' : 'Save to My Jobs'}
+                {saving ? 'Saving…' : savedJob ? 'Saved!' : 'Save to My Jobs'}
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => navigate('/applications')}
+                onClick={() => handleSaveToJobs('open')}
+                disabled={saving}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-button border border-border-default text-text-secondary hover:bg-bg-tertiary hover:text-text-primary text-sm font-medium transition-all"
               >
                 <ClipboardList size={15} />
-                Start Application
+                Open Job Workspace
               </motion.button>
             </motion.div>
 
             {/* Similar Jobs */}
-            {saved && (
+            {savedJob && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

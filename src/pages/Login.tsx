@@ -227,12 +227,13 @@ export default function Login() {
     }
   }, [isAuthenticated, user, navigate])
 
-  // Clear server error on mode change
-  useEffect(() => {
+  const changeMode = (nextMode: 'login' | 'register') => {
+    setMode(nextMode)
+    setShowReset(false)
     setServerError('')
     setLoginErrors({})
     setRegErrors({})
-  }, [mode])
+  }
 
   const triggerShake = () => {
     setShakeForm(true)
@@ -454,7 +455,7 @@ export default function Login() {
           {/* Mode Switcher */}
           <div className="relative flex mb-6 border-b border-border-subtle">
             <button
-              onClick={() => { setMode('login'); setShowReset(false) }}
+              onClick={() => changeMode('login')}
               className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${
                 mode === 'login' ? 'text-text-primary' : 'text-text-muted hover:text-text-secondary'
               }`}
@@ -469,7 +470,7 @@ export default function Login() {
               )}
             </button>
             <button
-              onClick={() => { setMode('register'); setShowReset(false) }}
+              onClick={() => changeMode('register')}
               className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${
                 mode === 'register' ? 'text-text-primary' : 'text-text-muted hover:text-text-secondary'
               }`}
@@ -636,7 +637,7 @@ export default function Login() {
                     Don&apos;t have an account?{' '}
                     <button
                       type="button"
-                      onClick={() => setMode('register')}
+                      onClick={() => changeMode('register')}
                       className="text-accent-indigo hover:text-accent-indigo-hover font-medium transition-colors"
                     >
                       Create one
@@ -901,7 +902,7 @@ export default function Login() {
                     Already have an account?{' '}
                     <button
                       type="button"
-                      onClick={() => setMode('login')}
+                      onClick={() => changeMode('login')}
                       className="text-accent-indigo hover:text-accent-indigo-hover font-medium transition-colors"
                     >
                       Sign in
@@ -914,8 +915,8 @@ export default function Login() {
 
           {/* Mobile Footer */}
           <div className="lg:hidden mt-10 text-center space-y-1">
-            <p className="text-xs text-text-muted">&copy; 2025 JobPilot AI</p>
-            <p className="text-xs text-text-muted">Private beta &middot; Built for Demo User</p>
+            <p className="text-xs text-text-muted">&copy; JobPilot AI</p>
+            <p className="text-xs text-text-muted">Private beta &middot; Your workspace, your data</p>
           </div>
         </div>
       </div>

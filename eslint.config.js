@@ -34,4 +34,11 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'warn',
     },
   },
+  {
+    files: ['src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      // shadcn/ui intentionally co-exports variants and helpers with components.
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

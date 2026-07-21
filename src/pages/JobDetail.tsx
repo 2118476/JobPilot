@@ -108,7 +108,7 @@ function ScoreRing({ score, size = 120, strokeWidth = 6 }: {
   }, [score])
 
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <div className="score-ring relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" style={{ filter: `drop-shadow(0 0 20px ${color}30)` }}>
         <circle
           cx={size / 2} cy={size / 2} r={radius}
@@ -171,52 +171,52 @@ function ScoreBreakdownBar({ label, score, index }: { label: string; score: numb
   )
 }
 
-// ─── Mock Analysis Data Generators ─────────────────────────────────────
+// Grounded presentation helpers built only from the saved job analysis.
 
 function generateScoreBreakdown(job: Job) {
-  const base = job.match_score
+  const analysis = job.match_analysis
   return [
-    { label: 'Job Title Match', score: Math.min(100, Math.round(base + (Math.random() * 10 - 3))) },
-    { label: 'Skill Match', score: Math.min(100, Math.round(base * 0.95 + Math.random() * 8)) },
-    { label: 'Experience Level', score: Math.min(100, Math.round(base + (Math.random() * 12 - 4))) },
-    { label: 'Location Match', score: Math.min(100, job.remote_type === 'remote' ? 95 : Math.round(base * 0.9)) },
-    { label: 'Salary Match', score: Math.min(100, Math.round(75 + Math.random() * 15)) },
-    { label: 'Industry Match', score: Math.min(100, Math.round(base * 0.92)) },
-    { label: 'Project Relevance', score: Math.min(100, Math.round(base + (Math.random() * 8 - 2))) },
-    { label: 'Education Match', score: Math.min(100, Math.round(80 + Math.random() * 12)) },
-    { label: 'Remote/Hybrid Fit', score: Math.min(100, job.remote_type === 'remote' ? 90 : Math.round(70 + Math.random() * 15)) },
-    { label: 'Company Culture', score: Math.min(100, Math.round(base * 0.88 + Math.random() * 10)) },
+    { label: 'Overall Match', score: analysis?.overall_score || job.match_score || 0 },
+    { label: 'Skill Match', score: analysis?.skill_match_score || 0 },
+    { label: 'Experience Match', score: analysis?.experience_match_score || 0 },
+    { label: 'Location Match', score: analysis?.location_match_score || 0 },
+    { label: 'Salary Match', score: analysis?.salary_match_score || 0 },
   ]
 }
 
 function generateCVSuggestions(job: Job) {
+  const matched = job.match_analysis?.matched_skills || []
+  const missing = job.match_analysis?.missing_skills || []
+  const leadingSkills = matched.slice(0, 2).join(' and ')
   return [
-    { type: 'REORDER', desc: `Move ${job.match_analysis?.matched_skills.slice(0, 2).join(' and ')} to the top of your skills list.`, reason: 'These are the top requirements for this role.' },
-    { type: 'HIGHLIGHT', desc: `Lead with your most relevant project in your projects section.`, reason: 'Directly demonstrates required technical skills.' },
-    { type: 'KEYWORD', desc: `Add ${job.match_analysis?.matched_skills[0] || 'relevant skills'} to your summary if not already present.`, reason: 'Top ATS keyword for this position.' },
+    { type: 'REORDER', desc: leadingSkills ? `Prioritise ${leadingSkills} where they are genuinely evidenced.` : 'Prioritise the experience most relevant to this role.', reason: 'Makes the strongest verified evidence easier to find.' },
+    { type: 'HIGHLIGHT', desc: 'Lead with the project or experience that most closely matches this job description.', reason: 'Direct evidence is more persuasive than generic claims.' },
+    { type: 'KEYWORD', desc: matched[0] ? `Use ${matched[0]} naturally where your experience supports it.` : 'Mirror the employer’s terminology only where it accurately describes your experience.', reason: 'Improves clarity and ATS alignment without keyword stuffing.' },
     { type: 'REWRITE', desc: `Personal summary should mention "${job.title.split(' ').slice(0, 3).join(' ')}" targeting.`, reason: 'Aligns your stated goal with this specific role.' },
-    { type: 'ADD', desc: `Include specific metrics from your relevant projects (user count, performance gains).`, reason: 'Quantified achievements improve response rates.' },
+    { type: 'ADD', desc: missing[0] ? `Do not claim ${missing[0]}; show adjacent experience or a current learning plan instead.` : 'Add specific, truthful outcomes where you have measurable evidence.', reason: 'Keeps the application credible and outcome-focused.' },
   ]
 }
 
 function generateCoverLetterAngles(job: Job) {
+  const matched = job.match_analysis?.matched_skills || []
+  const missing = job.match_analysis?.missing_skills || []
   return [
     `Open by referencing the specific ${job.title} role and why it excites you at ${job.company}.`,
-    `Highlight your ${job.match_analysis?.matched_skills.slice(0, 2).join(' and ')} experience as directly relevant.`,
-    `Mention your most relevant project — demonstrates ${job.match_analysis?.matched_skills.slice(0, 3).join(', ') || 'key skills'}.`,
-    `Acknowledge the ${job.match_analysis?.missing_skills[0] || 'skill'} gap but express willingness to learn rapidly.`,
-    `Close with enthusiasm for ${job.company}'s mission and your desire to contribute.`,
+    matched.length ? `Highlight verified experience with ${matched.slice(0, 2).join(' and ')}.` : 'Highlight the strongest verified overlap between your experience and the role.',
+    'Use one concrete achievement or project as evidence instead of repeating the CV.',
+    missing.length ? `If relevant, address ${missing[0]} honestly through adjacent experience or active learning.` : 'Keep every claim specific, truthful and relevant to the role.',
+    `Close with a concise reason you want to contribute to ${job.company}.`,
   ]
 }
 
 function generateInterviewQuestions(job: Job) {
+  const primarySkill = job.match_analysis?.matched_skills[0]
+  const learningGap = job.match_analysis?.missing_skills[0]
   return [
-    { category: 'Technical', q: `Explain how you've used ${job.match_analysis?.matched_skills[0] || 'React'} in a production environment.`, tip: `Reference your project with specific technical details.` },
-    { category: 'Technical', q: `What's the difference between REST and GraphQL APIs?`, tip: `Mention your API design experience from relevant projects.` },
-    { category: 'Project', q: `Tell us about a full-stack project you've built from scratch.`, tip: `Choose your most relevant project. Walk through the architecture.` },
-    { category: 'Behavioral', q: `Why do you want to work at ${job.company}?`, tip: `Research their mission and products. Be specific.` },
-    { category: 'Situational', q: `How do you handle tight deadlines with multiple stakeholders?`, tip: `Describe your prioritization and communication approach.` },
-    { category: 'Technical', q: `Describe your approach to debugging a complex production issue.`, tip: `Show systematic thinking and tools you use.` },
+    { category: 'Experience', q: primarySkill ? `Tell us how you have used ${primarySkill} in a real project or role.` : `Which part of your experience best prepares you for this ${job.title} role?`, tip: 'Use a specific situation, your actions and a measurable or observable result.' },
+    { category: 'Role', q: `Why are you interested in this ${job.title} position at ${job.company}?`, tip: 'Connect the role to your genuine goals and evidence from the job description.' },
+    { category: 'Behavioral', q: 'Describe a difficult problem you solved and how you approached it.', tip: 'Explain your reasoning, collaboration and result—not only the final answer.' },
+    { category: 'Growth', q: learningGap ? `How would you close your current gap in ${learningGap}?` : 'What capability are you developing next, and why?', tip: 'Be honest and give a concrete learning plan.' },
   ]
 }
 
@@ -316,14 +316,14 @@ export default function JobDetail() {
       }, 1000)
       return () => clearTimeout(timer)
     }
-  }, [notes])
+  }, [job, notes])
 
   // Hooks must run every render — guard for an unresolved job rather than
   // early-returning before them.
-  const scoreBreakdown = useMemo(() => (job ? generateScoreBreakdown(job) : []), [job?.id])
-  const cvSuggestions = useMemo(() => (job ? generateCVSuggestions(job) : []), [job?.id])
-  const coverLetterAngles = useMemo(() => (job ? generateCoverLetterAngles(job) : []), [job?.id])
-  const interviewQuestions = useMemo(() => (job ? generateInterviewQuestions(job) : []), [job?.id])
+  const scoreBreakdown = useMemo(() => (job ? generateScoreBreakdown(job) : []), [job])
+  const cvSuggestions = useMemo(() => (job ? generateCVSuggestions(job) : []), [job])
+  const coverLetterAngles = useMemo(() => (job ? generateCoverLetterAngles(job) : []), [job])
+  const interviewQuestions = useMemo(() => (job ? generateInterviewQuestions(job) : []), [job])
 
   const matchedProjects = useMemo(() => {
     if (!job) return []

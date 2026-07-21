@@ -28,4 +28,20 @@ export function assertProductionConfig(env = process.env) {
   if (!env.GEMINI_API_KEY && (env.AI_PROVIDER || 'gemini') === 'gemini') {
     console.warn('  WARNING: no GEMINI_API_KEY set — AI features will use heuristic fallbacks.')
   }
+
+  const origins = (env.ALLOWED_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean)
+  if (!origins.length) {
+    throw new Error('FATAL: ALLOWED_ORIGINS must contain the production frontend origin.')
+  }
+  for (const origin of origins) {
+    let parsed
+    try {
+      parsed = new URL(origin)
+    } catch {
+      throw new Error(`FATAL: invalid ALLOWED_ORIGINS entry: ${origin}`)
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== origin || origin.includes('*')) {
+      throw new Error(`FATAL: ALLOWED_ORIGINS entries must be exact HTTP(S) origins: ${origin}`)
+    }
+  }
 }

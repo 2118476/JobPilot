@@ -27,19 +27,35 @@ import multer from 'multer'
 import { jobChat } from './services/jobAssistantService.js'
 import { fetchJobPage } from './services/jobPageExtractor.js'
 import { extractTextFromUpload, runCvExtraction } from './services/cvImportService.js'
+import { randomUUID } from 'node:crypto'
 
 export function createApp() {
   const app = express()
+  app.disable('x-powered-by')
+  app.set('trust proxy', 1)
 
   // ── CORS: lock to configured origins in production ──
   const origins = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)
-  app.use(cors(origins.length ? { origin: origins } : {}))
+  app.use(cors({
+    origin(origin, callback) {
+      if (!origin || process.env.NODE_ENV !== 'production' || origins.includes(origin)) return callback(null, true)
+      return callback(new Error('Origin is not allowed by JobPilot.'))
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Request-Id'],
+    maxAge: 86400,
+  }))
 
   // ── Minimal security headers ──
   app.use((_req, res, next) => {
+    res.set('X-Request-Id', randomUUID())
     res.set('X-Content-Type-Options', 'nosniff')
     res.set('X-Frame-Options', 'DENY')
     res.set('Referrer-Policy', 'no-referrer')
+    res.set('Permissions-Policy', 'camera=(), geolocation=(), microphone=()')
+    res.set('X-Permitted-Cross-Domain-Policies', 'none')
+    res.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+    res.set('Cache-Control', 'no-store')
     if (process.env.NODE_ENV === 'production') {
       res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains')
     }
@@ -68,6 +84,44 @@ export function createApp() {
     code: 'PROFILE_INCOMPLETE',
   }
 
+  async function prepareManualJob(userId, body, requireAnalysis = false) {
+    const profile = await getProfile(userId)
+    if (requireAnalysis && !profileReady(profile)) {
+      const error = new Error(PROFILE_INCOMPLETE.error)
+      error.code = PROFILE_INCOMPLETE.code
+      throw error
+    }
+
+    let description = (body.description || '').trim()
+    if (!description && body.source_url) description = await fetchJobPage(body.source_url)
+
+    const now = new Date().toISOString()
+    const job = {
+      user_id: userId,
+      id: `man-${randomUUID()}`,
+      title: body.title,
+      company: body.company || 'Company not specified',
+      location: body.location || 'Location not specified',
+      remote_type: body.remote_type || 'unknown',
+      salary_min: body.salary_min || undefined,
+      salary_max: body.salary_max || undefined,
+      salary_currency: 'GBP',
+      description: description.slice(0, 20000),
+      requirements: [],
+      responsibilities: [],
+      job_type: 'full_time',
+      status: 'new',
+      match_score: 0,
+      source: body.source || 'Manual',
+      source_url: body.source_url || '',
+      posted_date: now.slice(0, 10),
+      created_at: now,
+      updated_at: now,
+    }
+    if (profileReady(profile)) attachAnalysis(job, await scoreJob(profile, job))
+    return job
+  }
+
   // ─── Health (the only unauthenticated route) ───────────────
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, ai: aiStatus(), auth: supabaseConfigured() ? 'supabase' : 'local' })
@@ -86,7 +140,7 @@ export function createApp() {
   app.get('/api/profile', requireAuth, async (req, res) => {
     res.json(await getProfile(req.userId, req.query?.track))
   })
-  app.put('/api/profile', requireAuth, async (req, res) => {
+  app.put('/api/profile', requireAuth, validate(schemas.profile), async (req, res) => {
     const saved = await saveProfile(req.userId, req.body || {}, req.query?.track)
     res.json(saved)
   })
@@ -116,7 +170,7 @@ export function createApp() {
     }
   })
 
-  app.post('/api/jobs/score', requireAuth, aiRateLimit, async (req, res) => {
+  app.post('/api/jobs/score', requireAuth, aiRateLimit, validate(schemas.scoreJobs), async (req, res) => {
     try {
       const userId = req.userId
       const profile = await getProfile(userId)
@@ -133,33 +187,19 @@ export function createApp() {
   })
 
   // ─── Add a job manually (browser extension + manual add) ────
-  app.post('/api/jobs/manual', requireAuth, validate(schemas.manualJob), async (req, res) => {
+  app.post('/api/jobs/manual/analyze', requireAuth, aiRateLimit, validate(schemas.manualJob), async (req, res) => {
     try {
-      const b = req.body
-      const profile = await getProfile(req.userId)
-      const job = {
-        user_id: req.userId,
-        id: `man-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        title: b.title,
-        company: b.company || 'Unknown',
-        location: b.location || 'Unknown',
-        remote_type: b.remote_type || 'unknown',
-        salary_min: b.salary_min || undefined,
-        salary_max: b.salary_max || undefined,
-        salary_currency: 'GBP',
-        description: (b.description || '').slice(0, 6000),
-        requirements: [],
-        responsibilities: [],
-        job_type: 'full_time',
-        status: 'new',
-        match_score: 0,
-        source: b.source || 'Manual',
-        source_url: b.source_url || '',
-        posted_date: new Date().toISOString().slice(0, 10),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-      if (profileReady(profile)) attachAnalysis(job, await scoreJob(profile, job))
+      const job = await prepareManualJob(req.userId, req.body, true)
+      res.json({ job, ai: aiStatus() })
+    } catch (e) {
+      const incomplete = e.code === PROFILE_INCOMPLETE.code
+      res.status(incomplete ? 422 : 400).json({ error: String(e.message || e), code: e.code })
+    }
+  })
+
+  app.post('/api/jobs/manual', requireAuth, aiRateLimit, validate(schemas.manualJob), async (req, res) => {
+    try {
+      const job = await prepareManualJob(req.userId, req.body)
       const jobs = await getJobs(req.userId)
       jobs.unshift(job)
       await saveJobs(req.userId, jobs)
@@ -172,7 +212,7 @@ export function createApp() {
   // ─── Pipeline: update a job's user state ─────────────────────
   const USER_FIELDS = ['status', 'saved', 'skipped', 'notes', 'applied_date', 'next_action', 'next_action_date', 'reminder_date', 'reminder_set', 'checklist']
 
-  app.patch('/api/jobs/:id', requireAuth, async (req, res) => {
+  app.patch('/api/jobs/:id', requireAuth, validate(schemas.jobPatch), async (req, res) => {
     try {
       const jobs = await getJobs(req.userId)
       const job = jobs.find((j) => j.id === req.params.id)
@@ -283,7 +323,7 @@ export function createApp() {
       const { job_id, type, content, job_title, company } = req.body
       const docs = await getDocuments(req.userId)
       const doc = {
-        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: `doc-${randomUUID()}`,
         job_id: job_id || null,
         type: type === 'cover_letter' || type === 'cl' ? 'cover_letter' : 'cv',
         job_title: job_title || '',
@@ -474,6 +514,24 @@ export function createApp() {
     } catch (e) {
       res.status(500).json({ error: String(e.message || e) })
     }
+  })
+
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'API endpoint not found.' })
+  })
+
+  app.use((error, _req, res, _next) => {
+    const isCors = /Origin is not allowed/.test(String(error?.message || ''))
+    const isJson = error?.type === 'entity.parse.failed'
+    const status = isCors ? 403 : isJson ? 400 : 500
+    if (status === 500) console.error('[api] unhandled request error:', error)
+    res.status(status).json({
+      error: isCors
+        ? 'This website is not allowed to access JobPilot.'
+        : isJson
+          ? 'Invalid JSON request body.'
+          : 'JobPilot could not complete this request.',
+    })
   })
 
   return app

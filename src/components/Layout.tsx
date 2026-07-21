@@ -7,6 +7,23 @@ import { Footer } from '@/components/Footer'
 import { useUIStore } from '@/store/uiStore'
 import { getProfile } from '@/lib/api'
 
+const PAGE_TITLE_MAP: Record<string, string> = {
+  '/dashboard': 'Dashboard',
+  '/coach': 'AI Coach',
+  '/jobs': 'Jobs',
+  '/profile': 'Career Profile',
+  '/cv-manager': 'CV Manager',
+  '/projects': 'Project Library',
+  '/search-settings': 'Search Settings',
+  '/applications': 'Applications',
+  '/skill-gaps': 'Skill Gaps',
+  '/reports': 'Reports',
+  '/privacy': 'Privacy & Data',
+  '/settings': 'Settings',
+  '/notifications': 'Notifications',
+  '/manual-job': 'Add Job Manually',
+}
+
 export function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -28,25 +45,8 @@ export function Layout() {
       .catch(() => {})
   }, [navigate])
 
-  const pageTitleMap: Record<string, string> = {
-    '/dashboard': 'Dashboard',
-    '/coach': 'AI Coach',
-    '/jobs': 'Jobs',
-    '/profile': 'Career Profile',
-    '/cv-manager': 'CV Manager',
-    '/projects': 'Project Library',
-    '/search-settings': 'Search Settings',
-    '/applications': 'Applications',
-    '/skill-gaps': 'Skill Gaps',
-    '/reports': 'Reports',
-    '/privacy': 'Privacy & Data',
-    '/settings': 'Settings',
-    '/notifications': 'Notifications',
-    '/manual-job': 'Add Job Manually',
-  }
-
   useEffect(() => {
-    const title = pageTitleMap[location.pathname] ||
+    const title = PAGE_TITLE_MAP[location.pathname] ||
       (location.pathname.startsWith('/jobs/') ? 'Job Detail' : 'JobPilot AI')
     setPageTitle(title)
     document.title = `${title} — JobPilot AI`
@@ -76,7 +76,7 @@ export function Layout() {
             }}
             className="min-h-[calc(100dvh-64px)] flex flex-col"
           >
-            <div className="flex-1 p-4 lg:p-8">
+            <div className="app-page flex-1 p-4 lg:p-8">
               <div className="max-w-content mx-auto">
                 <Outlet />
               </div>

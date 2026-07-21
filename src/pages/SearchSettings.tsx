@@ -16,14 +16,11 @@ import {
   ChevronDown,
   AlertTriangle,
   CheckCircle2,
-  Wifi,
   WifiOff,
-  Activity,
   Sparkles,
 } from 'lucide-react'
-import { searchJobs, getAutomationSettings, saveAutomationSettings, type AutomationSettings } from '@/lib/api'
+import { ApiError, searchJobsStrict, getAutomationSettings, saveAutomationSettings, type AutomationSettings } from '@/lib/api'
 import { useUIStore } from '@/store/uiStore'
-import { useAuthStore } from '@/store/authStore'
 
 // ─────────────────────────────────────────────
 // Types
@@ -33,10 +30,6 @@ interface JobSource {
   id: string
   name: string
   enabled: boolean
-  status: 'healthy' | 'rate_limited' | 'error' | 'disabled'
-  lastChecked: string
-  jobsToday: number
-  jobsThisWeek: number
 }
 
 interface SearchSettingsState {
@@ -75,15 +68,95 @@ const DEFAULT_EXCLUDED_COMPANIES: string[] = []
 // ─────────────────────────────────────────────
 
 const DEFAULT_SOURCES: JobSource[] = [
-  { id: 'adzuna', name: 'Adzuna', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'reed', name: 'Reed', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'govuk', name: 'GOV.UK Find a Job', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'civil-service', name: 'Civil Service Jobs', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'arbeitnow', name: 'Arbeitnow', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'themuse', name: 'The Muse', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'jobicy', name: 'Jobicy', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'remotive', name: 'Remotive', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'adzuna', name: 'Adzuna', enabled: true },
+  { id: 'reed', name: 'Reed', enabled: true },
+  { id: 'govuk', name: 'GOV.UK Find a Job', enabled: true },
+  { id: 'civil-service', name: 'Civil Service Jobs', enabled: true },
+  { id: 'arbeitnow', name: 'Arbeitnow', enabled: true },
+  { id: 'themuse', name: 'The Muse', enabled: true },
+  { id: 'jobicy', name: 'Jobicy', enabled: true },
+  { id: 'remotive', name: 'Remotive', enabled: true },
 ]
+
+const createDefaultSettings = (): SearchSettingsState => ({
+  search_active: false,
+  keywords: [],
+  exclusions: [],
+  excludedCompanies: [...DEFAULT_EXCLUDED_COMPANIES],
+  excludedTitles: [],
+  preferred_locations: [],
+  remote_preference: 'no_preference',
+  salary_min: 0,
+  salary_max: 0,
+  currency: 'GBP',
+  frequency: 'twice_daily',
+  morningTime: '08:00',
+  eveningTime: '18:00',
+  dailySearchLimit: 30,
+  sources: DEFAULT_SOURCES.map((source) => ({ ...source })),
+  seniorityLevels: [],
+  roleTypes: [],
+  workArrangements: [],
+  dateFilter: '7',
+  salaryMinimum: 0,
+  datePostedFilter: '7',
+  jobTitles: [],
+})
+
+function settingsFromAccount(saved: AutomationSettings): SearchSettingsState {
+  const defaults = createDefaultSettings()
+  const enabledSources = new Set(saved.sources || DEFAULT_SOURCES.map((source) => source.id))
+  return {
+    ...defaults,
+    search_active: saved.enabled,
+    keywords: saved.keywords || [],
+    exclusions: saved.exclusions || [],
+    excludedCompanies: saved.excluded_companies || [],
+    excludedTitles: saved.excluded_titles || [],
+    preferred_locations: saved.preferred_locations || (saved.location ? [saved.location] : []),
+    remote_preference: saved.remote_preference || 'no_preference',
+    salary_min: saved.salary_min || 0,
+    salary_max: saved.salary_max || 0,
+    currency: saved.currency || 'GBP',
+    frequency: saved.frequency,
+    morningTime: saved.morning_time || '08:00',
+    eveningTime: saved.evening_time || '18:00',
+    dailySearchLimit: saved.daily_search_limit || 30,
+    sources: DEFAULT_SOURCES.map((source) => ({ ...source, enabled: enabledSources.has(source.id) })),
+    seniorityLevels: saved.seniority_levels || [],
+    roleTypes: saved.role_types || [],
+    workArrangements: saved.work_arrangements || [],
+    dateFilter: String(saved.date_posted_days || 7),
+    salaryMinimum: saved.salary_min || 0,
+    datePostedFilter: String(saved.date_posted_days || 7),
+    jobTitles: saved.job_titles || [],
+  }
+}
+
+function accountPayload(settings: SearchSettingsState): Partial<AutomationSettings> {
+  return {
+    enabled: settings.search_active,
+    keywords: settings.keywords,
+    exclusions: settings.exclusions,
+    excluded_companies: settings.excludedCompanies,
+    excluded_titles: settings.excludedTitles,
+    preferred_locations: settings.preferred_locations,
+    remote_preference: settings.remote_preference,
+    salary_min: settings.salary_min || settings.salaryMinimum,
+    salary_max: settings.salary_max,
+    currency: settings.currency,
+    frequency: settings.frequency as AutomationSettings['frequency'],
+    morning_time: settings.morningTime,
+    evening_time: settings.eveningTime,
+    daily_search_limit: settings.dailySearchLimit,
+    sources: settings.sources.filter((source) => source.enabled).map((source) => source.id),
+    seniority_levels: settings.seniorityLevels,
+    role_types: settings.roleTypes,
+    work_arrangements: settings.workArrangements,
+    date_posted_days: Number(settings.datePostedFilter || settings.dateFilter) || 7,
+    job_titles: settings.jobTitles,
+  }
+}
 
 // ─────────────────────────────────────────────
 // Animation config
@@ -107,8 +180,6 @@ const staggerItem = {
 export default function SearchSettings() {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
-  const authUser = useAuthStore((s) => s.user)
-  const accountSettingsKey = authUser?.id ? `jobpilot_search_settings_${authUser.id}` : null
 
   // ── LIVE automation settings (persisted to the backend, drives the scheduler) ──
   const [automation, setAutomation] = useState<AutomationSettings>({
@@ -116,47 +187,27 @@ export default function SearchSettings() {
     email_alerts: false, alert_email: '', frequency: 'twice_daily',
   })
   const [automationSaving, setAutomationSaving] = useState(false)
-  useEffect(() => {
-    getAutomationSettings().then((s) => { if (s) setAutomation(s) })
-  }, [])
   const saveAutomation = async (patch: Partial<AutomationSettings>) => {
     const next = { ...automation, ...patch }
     setAutomation(next)
     setAutomationSaving(true)
     const saved = await saveAutomationSettings(next)
     setAutomationSaving(false)
-    if (saved) setAutomation(saved)
-    else addToast({ type: 'error', title: 'Could not save automation settings', message: 'Backend unreachable.' })
+    if (saved) {
+      setAutomation(saved)
+      setSettingsState((current) => ({
+        ...current,
+        ...('enabled' in patch ? { search_active: saved.enabled } : {}),
+        ...('frequency' in patch ? { frequency: saved.frequency } : {}),
+      }))
+    }
+    else addToast({ type: 'error', title: 'Could not save automation settings', message: 'Please check your connection and try again.' })
   }
 
-  const [settings, setSettings] = useState<SearchSettingsState>({
-    search_active: false,
-    keywords: [],
-    exclusions: [],
-    excludedCompanies: [...DEFAULT_EXCLUDED_COMPANIES],
-    excludedTitles: [],
-    preferred_locations: [],
-    remote_preference: 'no_preference',
-    salary_min: 0,
-    salary_max: 0,
-    currency: 'GBP',
-    frequency: 'twice_daily',
-    morningTime: '08:00',
-    eveningTime: '18:00',
-    dailySearchLimit: 30,
-    sources: DEFAULT_SOURCES.map((s) => ({ ...s })),
-    seniorityLevels: [],
-    roleTypes: [],
-    workArrangements: [],
-    dateFilter: '7',
-    salaryMinimum: 0,
-    datePostedFilter: '7',
-    jobTitles: [],
-  })
-
+  const [settings, setSettingsState] = useState<SearchSettingsState>(createDefaultSettings)
   const [hasChanges, setHasChanges] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
-  const [searchResult, setSearchResult] = useState<string | null>(null)
+  const [searchResult, setSearchResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     schedule: true,
     keywords: true,
@@ -166,10 +217,21 @@ export default function SearchSettings() {
     filters: true,
   })
 
-  // Track changes
-  useEffect(() => {
+  const setSettings = useCallback((update: React.SetStateAction<SearchSettingsState>) => {
+    setSettingsState(update)
     setHasChanges(true)
-  }, [settings])
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    getAutomationSettings().then((saved) => {
+      if (!alive || !saved) return
+      setAutomation(saved)
+      setSettingsState(settingsFromAccount(saved))
+      setHasChanges(false)
+    })
+    return () => { alive = false }
+  }, [])
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }))
@@ -177,77 +239,64 @@ export default function SearchSettings() {
 
   const updateSetting = useCallback(<K extends keyof SearchSettingsState>(key: K, value: SearchSettingsState[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
-    setHasChanges(true)
-  }, [])
+  }, [setSettings])
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    const saved = await saveAutomationSettings({ ...automation, ...accountPayload(settings) })
+    if (!saved) {
+      addToast({ type: 'error', title: 'Could not save settings', message: 'Please check your connection and try again.' })
+      return
+    }
+    setAutomation(saved)
+    setSettingsState(settingsFromAccount(saved))
     setHasChanges(false)
-    try {
-      if (accountSettingsKey) localStorage.setItem(accountSettingsKey, JSON.stringify(settings))
-    } catch { /* localStorage unavailable */ }
-    addToast({ type: 'success', title: 'Settings saved', message: 'Your search preferences have been stored.' })
+    addToast({ type: 'success', title: 'Settings saved', message: 'Your account search preferences are synced.' })
   }
 
-  // Restore saved settings on mount
-  useEffect(() => {
-    try {
-      const raw = accountSettingsKey ? localStorage.getItem(accountSettingsKey) : null
-      if (raw) {
-        setSettings((prev) => ({ ...prev, ...JSON.parse(raw) }))
-        setHasChanges(false)
-      }
-    } catch { /* ignore */ }
-  }, [accountSettingsKey])
-
   const handleReset = () => {
-    setSettings({
-      search_active: false,
-      keywords: [],
-      exclusions: [],
-      excludedCompanies: [...DEFAULT_EXCLUDED_COMPANIES],
-      excludedTitles: [],
-      preferred_locations: [],
-      remote_preference: 'no_preference',
-      salary_min: 0,
-      salary_max: 0,
-      currency: 'GBP',
-      frequency: 'twice_daily',
-      morningTime: '08:00',
-      eveningTime: '18:00',
-      dailySearchLimit: 30,
-      sources: DEFAULT_SOURCES.map((s) => ({ ...s })),
-      seniorityLevels: [],
-      roleTypes: [],
-      workArrangements: [],
-      dateFilter: '7',
-      salaryMinimum: 0,
-      datePostedFilter: '7',
-      jobTitles: [],
-    })
-    setHasChanges(true)
+    setSettings(createDefaultSettings())
   }
 
   const handleRunSearch = async () => {
+    if (totalEnabledSources === 0) {
+      addToast({ type: 'error', title: 'Choose at least one source', message: 'Enable a job source before running the search.' })
+      return
+    }
     setIsSearching(true)
     setSearchResult(null)
-    const location = settings.preferred_locations[0] || 'London, UK'
-    const res = await searchJobs({ location })
-    setIsSearching(false)
-    if (res) {
+    const saved = await saveAutomationSettings({ ...automation, ...accountPayload(settings) })
+    if (!saved) {
+      setIsSearching(false)
+      addToast({ type: 'error', title: 'Could not save settings', message: 'Your search was not started because the current filters could not be synced.' })
+      return
+    }
+    setAutomation(saved)
+    setSettingsState(settingsFromAccount(saved))
+    setHasChanges(false)
+    const location = settings.preferred_locations[0]
+    try {
+      const res = await searchJobsStrict({ location })
       const strong = res.jobs.filter((j) => (j.match_score || 0) >= 85).length
-      setSearchResult(
-        `Found ${res.total} jobs (${res.added} new, ${res.scored} freshly scored) — ${strong} strong match${strong === 1 ? '' : 'es'}.`,
-      )
+      setSearchResult({
+        type: 'success',
+        message: `Found ${res.total} jobs (${res.added} new, ${res.scored} freshly scored) — ${strong} strong match${strong === 1 ? '' : 'es'}.`,
+      })
       addToast({
         type: 'success',
         title: 'Search complete',
         message: `${res.added} new jobs added. Opening your Jobs list…`,
       })
       setTimeout(() => navigate('/jobs'), 1200)
-    } else {
-      setSearchResult('Could not reach the search backend. Make sure the server is running (npm run dev:all).')
-      addToast({ type: 'error', title: 'Search failed', message: 'Backend unreachable — start it with npm run dev:all.' })
+    } catch (error) {
+      const incomplete = error instanceof ApiError && error.code === 'PROFILE_INCOMPLETE'
+      const message = incomplete
+        ? 'Complete your Career Profile or enter a custom search query first.'
+        : error instanceof ApiError ? error.message : 'JobPilot Search is temporarily unavailable.'
+      setSearchResult({ type: 'error', message })
+      addToast({ type: 'error', title: incomplete ? 'Profile details needed' : 'Search failed', message })
       setTimeout(() => setSearchResult(null), 6000)
+    } finally {
+      setIsSearching(false)
     }
   }
 
@@ -255,12 +304,11 @@ export default function SearchSettings() {
     setSettings((prev) => ({
       ...prev,
       sources: prev.sources.map((s) =>
-        s.id === sourceId ? { ...s, enabled: !s.enabled, status: !s.enabled ? ('healthy' as const) : ('disabled' as const) } : s
+        s.id === sourceId ? { ...s, enabled: !s.enabled } : s
       ),
     }))
   }
 
-  const healthySources = settings.sources.filter((s) => s.status === 'healthy').length
   const totalEnabledSources = settings.sources.filter((s) => s.enabled).length
 
   // ── Tag Input helpers ──
@@ -409,40 +457,14 @@ export default function SearchSettings() {
       >
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4">
-            {/* Large Toggle */}
-            <button
-              onClick={() => updateSetting('search_active', !settings.search_active)}
-              className={`relative w-[52px] h-[28px] rounded-full transition-colors duration-200 flex-shrink-0 ${
-                settings.search_active ? 'bg-accent-indigo' : 'bg-bg-tertiary border border-border-default'
-              }`}
-              aria-label="Toggle search agent"
-            >
-              <motion.span
-                className="absolute top-[2px] left-[2px] w-6 h-6 rounded-full bg-white shadow-md"
-                animate={{ x: settings.search_active ? 24 : 0 }}
-                transition={{ duration: 0.2, ease: easeOutExpo }}
-              />
-            </button>
+            <div className="w-11 h-11 rounded-xl bg-accent-indigo-muted flex items-center justify-center">
+              <Search size={20} className="text-accent-indigo" />
+            </div>
             <div>
               <h2 className="font-heading text-heading-lg font-semibold text-text-primary">
-                Search Agent
+                Search Your Sources
               </h2>
-              <div className="flex items-center gap-2 mt-1">
-                {settings.search_active ? (
-                  <>
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-emerald opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-emerald" />
-                    </span>
-                    <span className="text-body-sm text-accent-emerald font-medium">Agent is ACTIVE</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber" />
-                    <span className="text-body-sm text-accent-amber font-medium">Agent is PAUSED</span>
-                  </>
-                )}
-              </div>
+              <p className="text-body-sm text-text-muted mt-1">Run a manual search using the account preferences below.</p>
             </div>
           </div>
 
@@ -469,25 +491,18 @@ export default function SearchSettings() {
         {/* Status Details */}
         <div className="flex flex-wrap gap-x-8 gap-y-2 mt-4 pt-4 border-t border-border-subtle/50">
           <div>
-            <span className="text-body-xs text-text-muted">Last run: </span>
-            <span className="text-body-xs text-text-secondary">Today at 10:00 AM</span>
-          </div>
-          <div>
-            <span className="text-body-xs text-text-muted">Next run: </span>
+            <span className="text-body-xs text-text-muted">Automation: </span>
             <span className="text-body-xs text-text-secondary">
-              {settings.search_active ? `Today at ${settings.eveningTime}` : '—'}
+              {automation.enabled ? 'enabled' : 'off'}
             </span>
-          </div>
-          <div>
-            <span className="text-body-xs text-text-muted">Jobs found today: </span>
-            <span className="text-body-xs text-accent-cyan font-medium">12</span>
           </div>
           <div>
             <span className="text-body-xs text-text-muted">Sources checked: </span>
             <span className="text-body-xs text-accent-emerald font-medium">
-              {healthySources}/{totalEnabledSources} healthy
+              {totalEnabledSources} enabled
             </span>
           </div>
+          {hasChanges && <span className="text-body-xs text-accent-amber">Unsaved preferences will be saved before this search runs.</span>}
         </div>
 
         {/* Search Result Flash */}
@@ -497,21 +512,26 @@ export default function SearchSettings() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-4 p-3 rounded-lg bg-accent-emerald-muted border border-accent-emerald/20 flex items-center gap-2"
+              className={`mt-4 p-3 rounded-lg border flex items-center gap-2 ${
+                searchResult.type === 'success'
+                  ? 'bg-accent-emerald-muted border-accent-emerald/20'
+                  : 'bg-accent-rose-muted border-accent-rose/20'
+              }`}
             >
-              <CheckCircle2 size={16} className="text-accent-emerald flex-shrink-0" />
-              <span className="text-body-sm text-accent-emerald font-medium">{searchResult}</span>
+              {searchResult.type === 'success' ? (
+                <CheckCircle2 size={16} className="text-accent-emerald flex-shrink-0" />
+              ) : (
+                <AlertTriangle size={16} className="text-accent-rose flex-shrink-0" />
+              )}
+              <span className={`text-body-sm font-medium ${
+                searchResult.type === 'success' ? 'text-accent-emerald' : 'text-accent-rose'
+              }`}>
+                {searchResult.message}
+              </span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* API Warning */}
-        <div className="mt-4 p-3 rounded-lg bg-accent-amber-muted border border-accent-amber/20 flex items-center gap-2">
-          <AlertTriangle size={16} className="text-accent-amber flex-shrink-0" />
-          <span className="text-body-xs text-accent-amber">
-            API limit at 80% — consider reducing frequency or daily search limit.
-          </span>
-        </div>
       </motion.div>
 
       {/* ── Section 2: Schedule ── */}
@@ -541,11 +561,10 @@ export default function SearchSettings() {
                 {/* Frequency */}
                 <div>
                   <label className="block text-body-sm font-medium text-text-secondary mb-2">Search Frequency</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {[
                       { key: 'twice_daily', label: 'Twice daily' },
                       { key: 'daily', label: 'Once daily' },
-                      { key: 'every_6h', label: 'Every 6 hours' },
                       { key: 'manual', label: 'Manual only' },
                     ].map((opt) => (
                       <button
@@ -585,28 +604,6 @@ export default function SearchSettings() {
                   </div>
                 </div>
 
-                {/* Daily Search Limit Slider */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-body-sm font-medium text-text-secondary">Daily Search Limit</label>
-                    <span className="text-mono-sm text-accent-indigo font-medium">{settings.dailySearchLimit}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={10}
-                    max={100}
-                    value={settings.dailySearchLimit}
-                    onChange={(e) => updateSetting('dailySearchLimit', parseInt(e.target.value))}
-                    className="w-full h-2 rounded-full appearance-none cursor-pointer bg-bg-elevated accent-accent-indigo"
-                  />
-                  <div className="flex justify-between mt-1">
-                    <span className="text-body-xs text-text-muted">10</span>
-                    <span className="text-body-xs text-text-muted">100</span>
-                  </div>
-                  <p className="text-body-xs text-text-muted mt-1">
-                    Limit API calls to stay within free tiers. Current: ~{settings.dailySearchLimit}/day.
-                  </p>
-                </div>
               </div>
             </motion.div>
           )}
@@ -666,7 +663,10 @@ export default function SearchSettings() {
                     <span className="text-body-xs font-medium text-text-secondary">Generated Query Preview</span>
                   </div>
                   <p className="text-body-xs text-text-muted font-mono leading-relaxed">
-                    &ldquo;junior software developer London&rdquo;, &ldquo;graduate software developer London&rdquo;, &ldquo;entry level Java developer UK&rdquo;
+                    {(settings.jobTitles.length ? settings.jobTitles : settings.keywords.length ? settings.keywords : ['Your profile target roles'])
+                      .slice(0, 3)
+                      .map((value) => `“${value}${settings.preferred_locations[0] ? ` ${settings.preferred_locations[0]}` : ''}”`)
+                      .join(', ')}
                   </p>
                 </div>
               </div>
@@ -816,7 +816,7 @@ export default function SearchSettings() {
                     onClick={() =>
                       setSettings((prev) => ({
                         ...prev,
-                        sources: prev.sources.map((s) => ({ ...s, enabled: true, status: 'healthy' as const })),
+                        sources: prev.sources.map((s) => ({ ...s, enabled: true })),
                       }))
                     }
                     className="px-3 py-1.5 rounded-button-sm border border-border-default text-body-xs text-text-secondary hover:bg-bg-tertiary hover:border-border-focus transition-colors"
@@ -827,7 +827,7 @@ export default function SearchSettings() {
                     onClick={() =>
                       setSettings((prev) => ({
                         ...prev,
-                        sources: prev.sources.map((s) => ({ ...s, enabled: false, status: 'disabled' as const })),
+                        sources: prev.sources.map((s) => ({ ...s, enabled: false })),
                       }))
                     }
                     className="px-3 py-1.5 rounded-button-sm border border-border-default text-body-xs text-text-secondary hover:bg-bg-tertiary hover:border-border-focus transition-colors"
@@ -860,36 +860,26 @@ export default function SearchSettings() {
                             <span className="font-heading text-heading-sm text-text-primary truncate">
                               {source.name}
                             </span>
-                            {source.status === 'healthy' && <Wifi size={12} className="text-accent-emerald flex-shrink-0" />}
-                            {source.status === 'rate_limited' && <Activity size={12} className="text-accent-amber flex-shrink-0" />}
-                            {source.status === 'error' && <WifiOff size={12} className="text-accent-rose flex-shrink-0" />}
-                            {source.status === 'disabled' && <WifiOff size={12} className="text-text-muted flex-shrink-0" />}
+                            {!source.enabled && <WifiOff size={12} className="text-text-muted flex-shrink-0" />}
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             <span
                               className={`inline-block w-1.5 h-1.5 rounded-full ${
-                                source.status === 'healthy'
-                                  ? 'bg-accent-emerald'
-                                  : source.status === 'rate_limited'
-                                  ? 'bg-accent-amber'
-                                  : source.status === 'error'
-                                  ? 'bg-accent-rose'
-                                  : 'bg-text-muted'
+                                source.enabled ? 'bg-accent-emerald' : 'bg-text-muted'
                               }`}
                             />
                             <span className="text-body-xs text-text-muted capitalize">
-                              {source.status.replace('_', ' ')}
+                              {source.enabled ? 'enabled' : 'disabled'}
                             </span>
                           </div>
-                          <p className="text-body-xs text-text-muted mt-1">Last checked: {source.lastChecked}</p>
-                          {source.enabled && (
-                            <p className="text-body-xs text-text-muted">
-                              {source.jobsToday} today &middot; {source.jobsThisWeek} this week
-                            </p>
-                          )}
+                          <p className="text-body-xs text-text-muted mt-1">
+                            Used when this provider is available to JobPilot Search.
+                          </p>
                         </div>
                         <button
                           onClick={() => toggleSource(source.id)}
+                          aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${source.name}`}
+                          aria-pressed={source.enabled}
                           className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ml-2 ${
                             source.enabled ? 'bg-accent-indigo' : 'bg-bg-elevated border border-border-default'
                           }`}

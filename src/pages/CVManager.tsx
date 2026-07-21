@@ -235,7 +235,6 @@ export default function CVManager() {
         } catch { /* localStorage unavailable */ }
       })
       .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [masterKeys.text])
 
   // Load real AI-generated documents from the backend, grouped into version

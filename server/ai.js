@@ -223,33 +223,56 @@ export async function scoreJob(profile, job) {
   }
 }
 
-function heuristicScore(profile, job) {
+export function heuristicScore(profile, job) {
   const text = jobText(job).toLowerCase()
-  const allSkills = Object.values(profile.skills || {}).flat().map((s) => s.replace(/\s*\(.*?\)\s*/g, '').trim())
+  const allSkills = Object.values(profile.skills || {}).flat().map((s) => String(s).replace(/\s*\(.*?\)\s*/g, '').trim())
   // Also count certifications in progress as partial skill matches
-  const inProgressCerts = (profile.certifications_in_progress || []).map((c) => c.name.replace(/\s*\(.*?\)\s*/g, '').trim())
+  const inProgressCerts = (profile.certifications_in_progress || []).map((c) => String(c?.name || c).replace(/\s*\(.*?\)\s*/g, '').trim())
   const matched = [...new Set(allSkills.filter((s) => s.length > 1 && text.includes(s.toLowerCase())))].slice(0, 8)
   const isSenior = /\b(senior|lead|principal|staff|head of|director|5\+? years|7\+? years|10\+? years)\b/.test(text)
   const isGovRole = isCivilServiceJob(job)
   // Partial ITIL credit: if job mentions ITIL and candidate is studying it
   const hasItilBonus = /\bitil\b/.test(text) && inProgressCerts.some((c) => /itil/i.test(c))
-  let base = Math.min(94, 48 + matched.length * 7)
-  if (isSenior) base = Math.max(28, base - 38)
-  if (isGovRole && !isSenior) base = Math.min(94, base + 6) // civil service roles tend to be well-matched
-  if (hasItilBonus) base = Math.min(94, base + 5)
+  const skillScore = Math.min(92, 20 + matched.length * 14 + (hasItilBonus ? 6 : 0))
+  const experienceCount = Array.isArray(profile.experience) ? profile.experience.length : 0
+  const experienceScore = isSenior
+    ? Math.min(55, 18 + experienceCount * 8)
+    : Math.min(85, 38 + experienceCount * 12)
+  const userLocations = [profile.location, ...(profile.preferences?.locations || [])]
+    .map((value) => String(value || '').toLowerCase()).filter(Boolean)
+  const jobLocation = String(job.location || '').toLowerCase()
+  const locationScore = job.remote_type === 'remote' || /\bremote\b/.test(text)
+    ? 90
+    : userLocations.length && userLocations.some((value) => jobLocation.includes(value) || value.includes(jobLocation))
+      ? 90
+      : userLocations.length && jobLocation
+        ? 50
+        : 60
+  const desiredMin = Number(profile.preferences?.salary_min || 0)
+  const desiredMax = Number(profile.preferences?.salary_max || 0)
+  const jobMin = Number(job.salary_min || 0)
+  const jobMax = Number(job.salary_max || 0)
+  const salaryScore = (!jobMin && !jobMax) || (!desiredMin && !desiredMax)
+    ? 60
+    : desiredMin && jobMax && jobMax < desiredMin
+      ? 25
+      : desiredMax && jobMin && jobMin > desiredMax
+        ? 70
+        : 88
+  const base = clamp(Math.round(skillScore * 0.5 + experienceScore * 0.25 + locationScore * 0.15 + salaryScore * 0.1))
   const candidates = ['AWS', 'Docker', 'Kubernetes', 'TypeScript', 'CI/CD', 'GraphQL', 'Kotlin', 'Go']
   const missing = candidates
     .filter((s) => text.includes(s.toLowerCase()) && !allSkills.some((k) => k.toLowerCase().includes(s.toLowerCase())))
     .slice(0, 5)
   let explanation = `You share ${matched.length} key skill${matched.length === 1 ? '' : 's'} with this role${isSenior ? ', but it looks more senior than your target level.' : '.'}`
-  if (isGovRole) explanation += ' This is a public sector role — your agile background and project delivery experience are valued here.'
+  if (isGovRole) explanation += ' This is a public-sector role, so review its essential criteria carefully in the saved job.'
   if (hasItilBonus) explanation += ' Your ITIL 4 studies are directly relevant.'
   return {
     overall_score: base,
-    skill_match_score: base,
-    experience_match_score: Math.max(25, base - 10),
-    location_match_score: /remote|london|hybrid|uk|united kingdom/.test(text) ? 88 : 65,
-    salary_match_score: 85,
+    skill_match_score: skillScore,
+    experience_match_score: experienceScore,
+    location_match_score: locationScore,
+    salary_match_score: salaryScore,
     matched_skills: matched,
     missing_skills: missing,
     explanation,
@@ -301,20 +324,31 @@ export async function interviewPrep(profile, job) {
   }
 }
 
-function heuristicQuestions(profile, job) {
+export function heuristicQuestions(profile, job) {
   const skills = (job.match_analysis?.matched_skills || Object.values(profile.skills || {}).flat()).map((x) =>
-    x.replace(/\s*\(.*?\)\s*/g, '').trim(),
+    String(x).replace(/\s*\(.*?\)\s*/g, '').trim(),
   )
-  const top = skills[0] || 'Java'
+  const missing = (job.match_analysis?.missing_skills || []).map(String)
+  const top = skills[0]
+  const project = (profile.projects || []).find((item) => item?.name)
+  const projectTip = project
+    ? `Use ${project.name} and explain only your real contribution, decisions and outcome.`
+    : 'Choose a real example from your profile and explain your contribution, decisions and outcome.'
+  const technicalQuestion = top
+    ? `Walk me through how you have used ${top} in real work or a project.`
+    : `Which requirement in this ${job.title || 'role'} best demonstrates your strengths?`
+  const secondTechnical = missing[0]
+    ? { q: `How would you close your current gap in ${missing[0]}?`, tip: 'Give a practical learning plan and be honest about your current level.' }
+    : { q: `How do you check the quality of your work for a ${job.title || 'new role'}?`, tip: 'Describe a real, repeatable process you have used.' }
   return [
-    { category: 'Technical', q: `Walk me through how you've used ${top} in a real project.`, tip: 'Reference a specific project (e.g. your salon booking platform) and the technical decisions you made.' },
-    { category: 'Technical', q: 'How do you design and test a REST API?', tip: 'Draw on your Spring Boot / Node.js API work; mention testing with JUnit.' },
-    { category: 'Project', q: "Tell me about a project you're proud of and your role in it.", tip: 'Pick your most relevant project; explain the problem, your contribution and the outcome.' },
-    { category: 'Behavioral', q: `Why do you want to work at ${job.company}?`, tip: 'Research their product; connect it to your goals as a junior developer.' },
+    { category: 'Technical', q: technicalQuestion, tip: projectTip },
+    { category: 'Technical', q: secondTechnical.q, tip: secondTechnical.tip },
+    { category: 'Project', q: "Tell me about a piece of work you're proud of and your role in it.", tip: projectTip },
+    { category: 'Behavioral', q: `Why do you want to work at ${job.company || 'this employer'}?`, tip: 'Connect facts from the saved job to your real goals and evidence.' },
     { category: 'Situational', q: "How do you approach a bug you can't immediately reproduce?", tip: 'Show a systematic process: logs, isolating variables, and asking for help when stuck.' },
-    { category: 'Behavioral', q: 'Tell me about a time you learned a new technology quickly.', tip: 'Use a real example from your studies or freelance work.' },
-    { category: 'Ask Them', q: 'What does the first three months look like for a junior developer here?', tip: "Shows you're thinking about ramp-up and growth." },
-    { category: 'Ask Them', q: 'How is code reviewed, and how do juniors get mentorship?', tip: 'Signals that you value learning and code quality.' },
+    { category: 'Behavioral', q: 'Tell me about a time you learned something new quickly.', tip: 'Use a real example from work, education, volunteering or a project—whichever is actually in your profile.' },
+    { category: 'Ask Them', q: `What would success look like in the first three months of this ${job.title || 'role'}?`, tip: 'Shows that you are thinking about outcomes and ramp-up.' },
+    { category: 'Ask Them', q: 'How does the team support feedback and development?', tip: 'Helps you assess the working environment without assuming a particular process.' },
   ]
 }
 
@@ -377,9 +411,27 @@ function profileReadyForCoach(profile) {
 
 export async function coachReply(profile, messages, context = {}) {
   if (!cfg().live) {
+    const lastMessage = String(messages?.at(-1)?.content || '').toLowerCase()
+    const targets = profile?.preferences?.titles || []
+    const skills = Object.values(profile?.skills || {}).flat().filter(Boolean)
+    const hasExperience = !!profile?.experience?.length
+    let text
+    if (!profileReadyForCoach(profile) || (!targets.length && !profile?.headline)) {
+      text = 'Let’s build this one truthful detail at a time. What job title or type of work are you targeting first?'
+    } else if (!profile?.location) {
+      text = `Your target is ${targets[0] || profile.headline}. What town, city or remote-work area should JobPilot use for your search?`
+    } else if (!skills.length && !hasExperience) {
+      text = 'What are the three strongest skills you can prove through work, education, volunteering or a real project?'
+    } else if (context.topJobs?.length) {
+      const top = context.topJobs[0]
+      text = `Your strongest current JobPilot match is ${top.title} at ${top.company} (${top.match_score}%). Open that saved job and review its matched and missing skills first.`
+    } else if (/question|complete|profile/.test(lastMessage)) {
+      text = 'What recent role, qualification or project best proves you can do the work you are targeting?'
+    } else {
+      text = 'Your next step is to run JobPilot Search with your saved target roles, then return here so I can prioritise real matches and skill gaps.'
+    }
     return {
-      text:
-        'Start in Career Profile and add your real target role, skills and one project. Then run Search in JobPilot so I can rank your next actions from real matches.',
+      text,
       fallback: true,
     }
   }

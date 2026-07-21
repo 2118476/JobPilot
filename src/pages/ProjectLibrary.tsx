@@ -59,7 +59,9 @@ function getTechGradient(techs: string[]): string {
   return techGradients.default
 }
 
-// ─── Mock Projects with Full Detail ───────────
+const createProjectId = () => `proj-${crypto.randomUUID()}`
+
+// ─── Project library filters ──────────────────
 const filterOptions = [
   { label: 'All', value: 'all' },
   { label: 'Java', value: 'Java' },
@@ -136,7 +138,7 @@ function ConfirmationDialog({ open, title, message, onConfirm, onCancel }: { ope
 
 export default function ProjectLibrary() {
   const [projects, setProjects] = useState<ProjectDetail[]>([])
-  const profileRef = useRef<Record<string, any>>({})
+  const profileRef = useRef<Record<string, unknown>>({})
   const [projectsLoaded, setProjectsLoaded] = useState(false)
   const [activeFilter, setActiveFilter] = useState('all')
   const [selectedProject, setSelectedProject] = useState<ProjectDetail | null>(null)
@@ -148,24 +150,30 @@ export default function ProjectLibrary() {
     let alive = true
     getProfile('tech').then((stored) => {
       if (!alive || !stored) return
-      const profile = stored as Record<string, any>
+      const profile = stored as Record<string, unknown>
       profileRef.current = profile
-      setProjects((profile.projects || []).map((item: Record<string, any>, index: number) => ({
+      const storedProjects = Array.isArray(profile.projects) ? profile.projects : []
+      setProjects(storedProjects.map((value, index: number) => {
+        const item = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+        return {
         id: String(item.id || `project-${index}`),
         name: String(item.name || ''),
         shortDescription: String(item.short_description || item.detail || item.description || '').slice(0, 180),
         description: String(item.detail || item.description || ''),
-        backendTech: Array.isArray(item.tech) ? item.tech : [],
+        backendTech: Array.isArray(item.tech) ? item.tech.map(String) : [],
         frontendTech: [], database: [], deployment: [], apis: [],
-        features: Array.isArray(item.features) ? item.features : [],
+        features: Array.isArray(item.features) ? item.features.map(String) : [],
         problemsSolved: String(item.problems_solved || ''),
         whatILearned: String(item.what_i_learned || ''),
         githubUrl: String(item.github_url || ''), liveUrl: String(item.live_url || item.url || ''),
-        jobTypes: Array.isArray(item.job_types) ? item.job_types : [],
+        jobTypes: Array.isArray(item.job_types) ? item.job_types.map(String) : [],
         relevanceScore: Number(item.relevance_score) || 0,
-        category: item.category || 'personal',
+        category: ['personal', 'professional', 'open_source', 'academic'].includes(String(item.category))
+          ? String(item.category) as ProjectDetail['category']
+          : 'personal',
         startDate: String(item.start_date || item.year || ''), endDate: String(item.end_date || ''), current: !!item.current,
-      })))
+        }
+      }))
       setProjectsLoaded(true)
     })
     return () => { alive = false }
@@ -253,7 +261,7 @@ export default function ProjectLibrary() {
 
   const onAddSubmit = addForm.handleSubmit((data) => {
     const newProject: ProjectDetail = {
-      id: `proj-${Date.now()}`,
+      id: createProjectId(),
       name: data.name,
       shortDescription: data.shortDescription,
       description: data.description,

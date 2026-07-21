@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -21,14 +21,14 @@ import {
   ChevronDown,
   AlertTriangle,
   X,
-  Sparkles,
   Code,
-  Shield,
   Globe,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { useAuth } from '@/hooks/useAuth'
-import { getDocuments, getStats } from '@/lib/api'
+import { getAutomationSettings, getDocuments, getStats, saveAutomationSettings, type AutomationSettings } from '@/lib/api'
+import { useTheme } from '@/hooks/useTheme'
+import { downloadErrorLog } from '@/lib/errorLog'
 
 // ─────────────────────────────────────────────
 // Animation config
@@ -58,7 +58,7 @@ const tabs: TabConfig[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'account', label: 'Account', icon: User },
-  { id: 'limits', label: 'Limits', icon: Gauge },
+  { id: 'limits', label: 'Usage', icon: Gauge },
   { id: 'advanced', label: 'Advanced', icon: Settings },
   { id: 'about', label: 'About', icon: Info },
 ]
@@ -80,6 +80,7 @@ function useLocalStorageState<T>(key: string, defaultValue: T): [T, (value: T | 
   useEffect(() => {
     try {
       localStorage.setItem(key, JSON.stringify(state))
+      window.dispatchEvent(new CustomEvent('jobpilot-settings-changed', { detail: { key } }))
     } catch {
       // ignore
     }
@@ -95,6 +96,7 @@ function useLocalStorageState<T>(key: string, defaultValue: T): [T, (value: T | 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
   const [isMobile, setIsMobile] = useState(false)
+  const appearance = useTheme()
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -102,19 +104,6 @@ export default function SettingsPage() {
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
-
-  // Apply theme immediately
-  const [theme, setTheme] = useLocalStorageState<'dark' | 'light' | 'system'>('jobpilot-theme', 'dark')
-
-  useEffect(() => {
-    const root = document.documentElement
-    if (theme === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      root.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
-    } else {
-      root.setAttribute('data-theme', theme)
-    }
-  }, [theme])
 
   return (
     <div className="max-w-5xl">
@@ -152,6 +141,7 @@ export default function SettingsPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`w-full flex items-center gap-3 h-[44px] px-4 rounded-xl text-left transition-all duration-150 ${
                     isActive
                       ? 'bg-accent-indigo-muted text-accent-indigo border-l-[3px] border-accent-indigo'
@@ -176,7 +166,7 @@ export default function SettingsPage() {
               animate="animate"
               exit="exit"
             >
-              {activeTab === 'appearance' && <AppearanceTab theme={theme} setTheme={setTheme} />}
+              {activeTab === 'appearance' && <AppearanceTab appearance={appearance} />}
               {activeTab === 'notifications' && <NotificationsTab />}
               {activeTab === 'account' && <AccountTab />}
               {activeTab === 'limits' && <LimitsTab />}
@@ -194,23 +184,19 @@ export default function SettingsPage() {
 // Tab 1: Appearance
 // ════════════════════════════════════════════
 
-function AppearanceTab({
-  theme,
-  setTheme,
-}: {
-  theme: 'dark' | 'light' | 'system'
-  setTheme: (t: 'dark' | 'light' | 'system') => void
-}) {
-  const [fontSize, setFontSize] = useLocalStorageState<'small' | 'default' | 'large'>('jobpilot-font-size', 'default')
-  const [compactMode, setCompactMode] = useLocalStorageState('jobpilot-compact', false)
-  const [animations, setAnimations] = useLocalStorageState('jobpilot-animations', true)
-  const [scoreRingStyle, setScoreRingStyle] = useLocalStorageState<'gradient' | 'solid' | 'minimal'>('jobpilot-score-ring', 'gradient')
-
-  // Apply font size
-  useEffect(() => {
-    const root = document.documentElement
-    root.style.fontSize = fontSize === 'small' ? '14px' : fontSize === 'large' ? '18px' : '16px'
-  }, [fontSize])
+function AppearanceTab({ appearance }: { appearance: ReturnType<typeof useTheme> }) {
+  const {
+    theme,
+    setTheme,
+    fontSize,
+    setFontSize,
+    compactMode,
+    setCompactMode,
+    animations,
+    setAnimations,
+    scoreRingStyle,
+    setScoreRingStyle,
+  } = appearance
 
   return (
     <div className="space-y-6">
@@ -230,6 +216,7 @@ function AppearanceTab({
             <button
               key={t.key}
               onClick={() => setTheme(t.key)}
+              aria-pressed={theme === t.key}
               className={`flex flex-col items-center gap-2 p-4 rounded-card border-2 transition-all ${
                 theme === t.key
                   ? 'border-accent-indigo bg-accent-indigo-muted/30'
@@ -295,9 +282,9 @@ function AppearanceTab({
       <SettingsCard title="Score Ring Style">
         <div className="grid grid-cols-3 gap-3">
           {([
-            { key: 'gradient' as const, label: 'Gradient', desc: 'Color gradient based on score' },
+            { key: 'gradient' as const, label: 'Glow', desc: 'Soft emphasis around the score' },
             { key: 'solid' as const, label: 'Solid', desc: 'Single color per score band' },
-            { key: 'minimal' as const, label: 'Minimal', desc: 'Simple thin ring' },
+            { key: 'minimal' as const, label: 'Minimal', desc: 'Simple, thin score ring' },
           ]).map((opt) => (
             <button
               key={opt.key}
@@ -326,10 +313,7 @@ function AppearanceTab({
 
 function NotificationsTab() {
   const [inAppEnabled, setInAppEnabled] = useLocalStorageState('jobpilot-inapp-notifs', true)
-  const [soundEnabled, setSoundEnabled] = useLocalStorageState('jobpilot-notif-sound', false)
-  const [digestFreq, setDigestFreq] = useLocalStorageState<'none' | 'daily' | 'weekly'>('jobpilot-digest', 'weekly')
-
-  const [notifTypes, setNotifTypes] = useState({
+  const [notifTypes, setNotifTypes] = useLocalStorageState('jobpilot-notification-types', {
     strong_match: true,
     closing_soon: true,
     unapplied_match: true,
@@ -367,10 +351,8 @@ function NotificationsTab() {
       </h2>
 
       <SettingsCard title="In-App Notifications">
-        <ToggleRow label="Enable In-App Notifications" description="Show notification banners in the app." value={inAppEnabled} onChange={setInAppEnabled} />
-        <div className="mt-4 pt-4 border-t border-border-subtle">
-          <ToggleRow label="Notification Sound" description="Play a sound when new notifications arrive." value={soundEnabled} onChange={setSoundEnabled} />
-        </div>
+        <ToggleRow label="Enable In-App Notifications" description="Show live alerts derived from this account's profile, jobs and application pipeline." value={inAppEnabled} onChange={setInAppEnabled} />
+        <p className="text-body-xs text-text-muted">These display preferences are stored on this device. Email alerts are configured separately in Search Settings.</p>
       </SettingsCard>
 
       <SettingsCard title="Notification Types">
@@ -384,36 +366,13 @@ function NotificationsTab() {
               <Switch
                 value={notifTypes[nt.key as keyof typeof notifTypes]}
                 onChange={() => toggleNotifType(nt.key)}
+                ariaLabel={nt.label}
               />
             </div>
           ))}
         </div>
       </SettingsCard>
 
-      <SettingsCard title="Digest Frequency">
-        <div className="flex gap-2">
-          {([
-            { key: 'none' as const, label: 'None' },
-            { key: 'daily' as const, label: 'Daily' },
-            { key: 'weekly' as const, label: 'Weekly' },
-          ]).map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => setDigestFreq(opt.key)}
-              className={`flex-1 px-4 py-2.5 rounded-button text-sm font-medium transition-all ${
-                digestFreq === opt.key
-                  ? 'bg-accent-indigo text-white'
-                  : 'bg-bg-tertiary text-text-secondary border border-border-default hover:border-border-focus'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-body-xs text-text-muted mt-2">
-          Receive a digest email summarizing your job search activity.
-        </p>
-      </SettingsCard>
     </div>
   )
 }
@@ -464,21 +423,6 @@ function AccountTab() {
         <p className="text-body-xs text-text-muted mt-2">Password changes are handled securely through “Forgot password” on the sign-in page.</p>
       </SettingsCard>
 
-      <SettingsCard title="Two-Factor Authentication">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <Shield size={16} className="text-text-muted" />
-            <div>
-              <span className="text-body-sm text-text-primary">Two-factor authentication</span>
-              <p className="text-body-xs text-text-muted">Add an extra layer of security to your account.</p>
-            </div>
-          </div>
-          <span className="px-2.5 py-1 rounded-pill bg-accent-amber-muted text-accent-amber text-body-xs font-medium">
-            Coming soon
-          </span>
-        </div>
-      </SettingsCard>
-
       <SettingsCard title="Account Created">
         <p className="text-body-sm text-text-secondary">{createdAt}</p>
       </SettingsCard>
@@ -521,142 +465,83 @@ function AccountTab() {
 // ════════════════════════════════════════════
 
 function LimitsTab() {
-  const [dailySearchLimit, setDailySearchLimit] = useLocalStorageState('jobpilot-daily-search-limit', 30)
-  const [maxJobsStored, setMaxJobsStored] = useLocalStorageState('jobpilot-max-jobs', 1000)
-  const [autoDeleteDays, setAutoDeleteDays] = useLocalStorageState('jobpilot-auto-delete-days', 90)
-  const [maxTailoredCVs, setMaxTailoredCVs] = useLocalStorageState('jobpilot-max-cvs', 20)
-  const [pauseAllSearches, setPauseAllSearches] = useState(false)
+  const navigate = useNavigate()
   const [storedCounts, setStoredCounts] = useState({ jobs: 0, documents: 0 })
+  const [automation, setAutomation] = useState<AutomationSettings | null>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let alive = true
-    Promise.all([getStats(), getDocuments()]).then(([stats, documents]) => {
-      if (alive) setStoredCounts({ jobs: stats?.totalJobs || 0, documents: documents?.length || 0 })
+    Promise.all([getStats(), getDocuments(), getAutomationSettings()]).then(([stats, documents, saved]) => {
+      if (!alive) return
+      setStoredCounts({ jobs: stats?.totalJobs || 0, documents: documents?.length || 0 })
+      setAutomation(saved)
     })
     return () => { alive = false }
   }, [])
+
+  const setAutomationEnabled = async (enabled: boolean) => {
+    if (!automation) return
+    setSaving(true)
+    const saved = await saveAutomationSettings({ ...automation, enabled })
+    if (saved) setAutomation(saved)
+    setSaving(false)
+  }
 
   return (
     <div className="space-y-6">
       <h2 className="font-heading text-heading-lg font-semibold text-text-primary flex items-center gap-2">
         <Gauge size={20} className="text-accent-indigo" />
-        Usage Limits
+        Usage &amp; Automation
       </h2>
 
-      <SettingsCard title="Daily Search Limit">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-body-sm text-text-secondary">Max searches per day</span>
-          <span className="text-mono-sm text-accent-indigo font-medium">{dailySearchLimit} / 100</span>
-        </div>
-        <div className="w-full h-2 rounded-full bg-bg-elevated overflow-hidden mb-3">
-          <div
-            className="h-full rounded-full bg-accent-indigo transition-all duration-300"
-            style={{ width: `${dailySearchLimit}%` }}
-          />
-        </div>
-        <input
-          type="range"
-          min={10}
-          max={100}
-          value={dailySearchLimit}
-          onChange={(e) => setDailySearchLimit(parseInt(e.target.value))}
-          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-bg-elevated accent-accent-indigo"
-        />
-        <p className="text-body-xs text-text-muted mt-2">
-          Maximum number of search queries per day. Lower = safer for free API tiers.
-        </p>
-      </SettingsCard>
-
-      <SettingsCard title="Job Storage">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-body-sm text-text-secondary">Jobs stored</span>
-          <span className="text-mono-sm text-accent-indigo font-medium">{storedCounts.jobs} / {maxJobsStored}</span>
-        </div>
-        <div className="w-full h-2 rounded-full bg-bg-elevated overflow-hidden mb-3">
-          <div
-            className="h-full rounded-full bg-accent-cyan transition-all duration-300"
-            style={{ width: `${Math.min((storedCounts.jobs / maxJobsStored) * 100, 100)}%` }}
-          />
-        </div>
-        <div className="flex items-center gap-4 mt-4">
-          <label className="text-body-sm text-text-secondary whitespace-nowrap">Max stored:</label>
-          <input
-            type="number"
-            value={maxJobsStored}
-            onChange={(e) => setMaxJobsStored(parseInt(e.target.value) || 100)}
-            className="w-24 h-9 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:outline-none"
-          />
-        </div>
-        <div className="flex items-center gap-4 mt-3">
-          <label className="text-body-sm text-text-secondary whitespace-nowrap">Auto-delete after:</label>
-          <input
-            type="number"
-            value={autoDeleteDays}
-            onChange={(e) => setAutoDeleteDays(parseInt(e.target.value) || 30)}
-            className="w-24 h-9 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:outline-none"
-          />
-          <span className="text-body-sm text-text-muted">days</span>
-        </div>
-        <p className="text-body-xs text-text-muted mt-2">
-          Old jobs are automatically removed to keep storage lean.
-        </p>
-      </SettingsCard>
-
-      <SettingsCard title="CV Versions">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-body-sm text-text-secondary">Tailored CVs stored</span>
-          <span className="text-mono-sm text-accent-violet font-medium">{storedCounts.documents} / {maxTailoredCVs}</span>
-        </div>
-        <div className="flex items-center gap-4 mt-3">
-          <label className="text-body-sm text-text-secondary whitespace-nowrap">Maximum stored:</label>
-          <input
-            type="number"
-            value={maxTailoredCVs}
-            onChange={(e) => setMaxTailoredCVs(parseInt(e.target.value) || 10)}
-            className="w-24 h-9 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:outline-none"
-          />
-        </div>
-        <p className="text-body-xs text-text-muted mt-2">
-          Old tailored CVs can be auto-cleaned when you reach the limit.
-        </p>
-      </SettingsCard>
-
-      <SettingsCard title="Pause All Searches">
+      <SettingsCard title="Search Agent">
         <ToggleRow
-          label="Pause All Automated Searches"
-          description="Temporarily stop all automated search agents. Manual searches still work."
-          value={pauseAllSearches}
-          onChange={setPauseAllSearches}
+          label="Automated Searches"
+          description={saving ? 'Saving your account setting…' : 'Run your saved searches on the configured schedule.'}
+          value={automation?.enabled || false}
+          onChange={setAutomationEnabled}
         />
+        <div className="mt-4 pt-4 border-t border-border-subtle flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-body-sm font-medium text-text-primary">Schedule</p>
+            <p className="text-body-xs text-text-muted">
+              {automation?.frequency === 'manual'
+                ? 'Manual searches only'
+                : automation?.frequency === 'daily'
+                  ? `Daily at ${automation.morning_time || '08:00'}`
+                  : `Twice daily at ${automation?.morning_time || '08:00'} and ${automation?.evening_time || '18:00'}`}
+            </p>
+          </div>
+          <button onClick={() => navigate('/search-settings')} className="px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors">
+            Configure Search
+          </button>
+        </div>
       </SettingsCard>
 
-      {/* Subscription */}
-      <SettingsCard title="Subscription">
-        <div className="flex items-center gap-3 mb-3">
+      <SettingsCard title="Workspace Storage">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-card bg-bg-tertiary border border-border-subtle p-4">
+            <p className="text-display-sm font-heading font-semibold text-text-primary">{storedCounts.jobs}</p>
+            <p className="text-body-xs text-text-muted">Jobs in this account</p>
+          </div>
+          <div className="rounded-card bg-bg-tertiary border border-border-subtle p-4">
+            <p className="text-display-sm font-heading font-semibold text-text-primary">{storedCounts.documents}</p>
+            <p className="text-body-xs text-text-muted">Saved CVs and letters</p>
+          </div>
+        </div>
+        <p className="text-body-xs text-text-muted">JobPilot does not silently delete your jobs. Manage or export your data from Privacy &amp; Data.</p>
+      </SettingsCard>
+
+      <SettingsCard title="Plan">
+        <div className="flex items-center gap-3">
           <span className="px-3 py-1 rounded-pill bg-accent-emerald-muted text-accent-emerald text-body-xs font-medium">
             Free / Private Beta
           </span>
         </div>
         <p className="text-body-sm text-text-secondary">
-          You are on the free private beta plan. All features are available.
+          All currently released JobPilot features are available. There are no paid controls or simulated upgrades in this build.
         </p>
-        <button
-          disabled
-          className="mt-3 px-4 py-2 rounded-button bg-bg-tertiary border border-border-subtle text-body-sm text-text-muted cursor-not-allowed opacity-50"
-        >
-          Upgrade to Pro — Coming soon
-        </button>
-        <div className="mt-4 space-y-2">
-          <p className="text-body-xs text-text-muted font-medium">Pro features (coming soon):</p>
-          {['Unlimited searches', 'Email notifications', 'Advanced AI tailoring', 'Browser extension', 'Multi-device sync'].map(
-            (feature) => (
-              <div key={feature} className="flex items-center gap-2 text-body-xs text-text-muted">
-                <Sparkles size={12} className="text-text-muted/50" />
-                {feature}
-              </div>
-            )
-          )}
-        </div>
       </SettingsCard>
     </div>
   )
@@ -667,7 +552,6 @@ function LimitsTab() {
 // ════════════════════════════════════════════
 
 function AdvancedTab() {
-  const [debugMode, setDebugMode] = useLocalStorageState('jobpilot-debug', false)
   const [devInfoOpen, setDevInfoOpen] = useState(false)
   const [clearCacheOpen, setClearCacheOpen] = useState(false)
   const [resetOnboardingOpen, setResetOnboardingOpen] = useState(false)
@@ -682,22 +566,14 @@ function AdvancedTab() {
     }, 300)
   }
 
-  const handleExportLogs = () => {
-    const logs = {
-      app_version: '1.0.0',
-      build_date: '2025-01-08',
-      user_agent: navigator.userAgent,
-      screen: { width: window.screen.width, height: window.screen.height },
-      timestamp: new Date().toISOString(),
-      localStorage_keys: Object.keys(localStorage),
-    }
-    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `jobpilot-logs-${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+  const handleResetSettings = () => {
+    const deviceKeys = [
+      'jobpilot-appearance', 'jobpilot-theme', 'jobpilot-font-size', 'jobpilot-compact',
+      'jobpilot-animations', 'jobpilot-score-ring', 'jobpilot-inapp-notifs',
+      'jobpilot-notification-types', 'jobpilot-notif-sound', 'jobpilot-digest',
+    ]
+    deviceKeys.forEach((key) => localStorage.removeItem(key))
+    window.location.reload()
   }
 
   return (
@@ -739,10 +615,6 @@ function AdvancedTab() {
         </div>
       </SettingsCard>
 
-      <SettingsCard title="Debug">
-        <ToggleRow label="Debug Mode" description="Show additional debug information and logs." value={debugMode} onChange={setDebugMode} />
-      </SettingsCard>
-
       <SettingsCard title="Export">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
@@ -750,7 +622,7 @@ function AdvancedTab() {
             <p className="text-body-xs text-text-muted">Download debug logs for troubleshooting.</p>
           </div>
           <button
-            onClick={handleExportLogs}
+            onClick={downloadErrorLog}
             className="flex items-center gap-2 px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary hover:border-border-focus transition-all"
           >
             <Download size={14} />
@@ -784,10 +656,6 @@ function AdvancedTab() {
                 <div className="flex justify-between">
                   <span>App Version</span>
                   <span className="text-text-secondary">v1.0.0</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Build Date</span>
-                  <span className="text-text-secondary">2025-01-08</span>
                 </div>
                 <div className="flex justify-between">
                   <span>React</span>
@@ -834,22 +702,22 @@ function AdvancedTab() {
         )}
       </AnimatePresence>
 
-      {/* Reset Onboarding Confirmation */}
+      {/* Reset device settings confirmation */}
       <AnimatePresence>
         {resetOnboardingOpen && (
-          <Modal onClose={() => setResetOnboardingOpen(false)} title="Reset Onboarding">
+          <Modal onClose={() => setResetOnboardingOpen(false)} title="Reset Device Settings">
             <p className="text-body-sm text-text-secondary mb-4">
-              This will reset the onboarding flow so you see it again on next visit. Your data is not affected.
+              This resets appearance and notification preferences on this device. Your profile, jobs and account data are not affected.
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setResetOnboardingOpen(false)} className="px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:bg-bg-tertiary transition-colors">
                 Cancel
               </button>
               <button
-                onClick={() => { setResetOnboardingOpen(false) }}
+                onClick={handleResetSettings}
                 className="px-4 py-2 rounded-button bg-accent-indigo text-white text-body-sm font-medium hover:bg-accent-indigo-hover transition-colors"
               >
-                Reset Onboarding
+                Reset Settings
               </button>
             </div>
           </Modal>
@@ -888,21 +756,21 @@ function AboutTab() {
 
       <SettingsCard title="Built For">
         <p className="text-body-sm text-text-secondary">
-          <span className="font-medium text-text-primary">Demo User</span> — Private beta, single user mode
+          Private beta accounts with isolated profiles, jobs, documents and search preferences.
         </p>
       </SettingsCard>
 
       <SettingsCard title="Links">
         <div className="space-y-2">
           {[
-            { label: 'Privacy Policy', href: '#' },
-            { label: 'Terms of Service', href: '#' },
-            { label: 'Contact Support', href: 'mailto:support@jobpilot.ai' },
+            { label: 'Privacy & Data Controls', href: '#/privacy' },
+            { label: 'Project Source', href: 'https://github.com/2118476/JobPilot' },
           ].map((link) => (
             <a
               key={link.label}
               href={link.href}
-              onClick={(e) => { if (link.href === '#') e.preventDefault() }}
+              target={link.href.startsWith('http') ? '_blank' : undefined}
+              rel={link.href.startsWith('http') ? 'noreferrer' : undefined}
               className="flex items-center gap-2 text-body-sm text-accent-indigo hover:text-accent-indigo-hover transition-colors"
             >
               <Globe size={14} />
@@ -910,19 +778,6 @@ function AboutTab() {
             </a>
           ))}
         </div>
-      </SettingsCard>
-
-      <SettingsCard title="Feedback">
-        <p className="text-body-sm text-text-secondary mb-3">
-          Have suggestions or found a bug? We would love to hear from you.
-        </p>
-        <a
-          href="mailto:feedback@jobpilot.ai"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary hover:border-border-focus transition-all"
-        >
-          <Mail size={14} />
-          Send Feedback
-        </a>
       </SettingsCard>
 
       <SettingsCard title="Open Source Credits">
@@ -972,19 +827,21 @@ function ToggleRow({
         <p className="text-body-sm font-medium text-text-primary">{label}</p>
         <p className="text-body-xs text-text-muted">{description}</p>
       </div>
-      <Switch value={value} onChange={onChange} />
+      <Switch value={value} onChange={onChange} ariaLabel={label} />
     </div>
   )
 }
 
-function Switch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+function Switch({ value, onChange, ariaLabel = 'Toggle setting' }: { value: boolean; onChange: (v: boolean) => void; ariaLabel?: string }) {
   return (
     <button
       onClick={() => onChange(!value)}
       className={`relative w-[44px] h-[24px] rounded-full transition-colors duration-200 flex-shrink-0 ${
         value ? 'bg-accent-indigo' : 'bg-bg-elevated border border-border-default'
       }`}
-      aria-label="Toggle"
+      role="switch"
+      aria-checked={value}
+      aria-label={ariaLabel}
     >
       <motion.span
         className="absolute top-[2px] left-[2px] w-5 h-5 rounded-full bg-white shadow"
@@ -996,6 +853,7 @@ function Switch({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 }
 
 function Modal({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
+  const titleId = useId()
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1012,15 +870,19 @@ function Modal({ children, onClose, title }: { children: React.ReactNode; onClos
         exit={{ scale: 0.95, opacity: 0 }}
         transition={{ duration: 0.2, ease: easeOutExpo }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         className="relative bg-bg-elevated rounded-card-lg border border-border-subtle shadow-2xl w-full max-w-md p-6"
       >
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-1 rounded-lg hover:bg-bg-tertiary text-text-muted hover:text-text-primary transition-colors"
+          aria-label="Close dialog"
         >
           <X size={18} />
         </button>
-        <h3 className="font-heading text-heading-lg font-semibold text-text-primary mb-4">{title}</h3>
+        <h3 id={titleId} className="font-heading text-heading-lg font-semibold text-text-primary mb-4">{title}</h3>
         {children}
       </motion.div>
     </motion.div>

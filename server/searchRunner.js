@@ -3,7 +3,7 @@
 // shared by the /api/jobs/search route and the background scheduler.
 // Always scoped to a userId.
 // ─────────────────────────────────────────────────────────────
-import { getProfile, getActiveTrack, getJobs, saveJobs } from './store.js'
+import { getProfile, getActiveTrack, getJobs, saveJobs, getSearchSettings, profileReady } from './store.js'
 import { scoreJob } from './ai.js'
 import { searchSources } from './sources.js'
 
@@ -43,21 +43,56 @@ export function attachAnalysis(job, s) {
   return job
 }
 
+export function applySearchFilters(jobs, settings, now = Date.now()) {
+  const excludedCompanies = (settings.excluded_companies || []).map((value) => value.toLowerCase())
+  const excludedTitles = [...(settings.excluded_titles || []), ...(settings.exclusions || [])].map((value) => value.toLowerCase())
+  const workArrangements = new Set(settings.work_arrangements || [])
+  const postedAfter = settings.date_posted_days
+    ? now - settings.date_posted_days * 24 * 60 * 60 * 1000
+    : 0
+  return jobs.filter((job) => {
+    const company = String(job.company || '').toLowerCase()
+    const title = String(job.title || '').toLowerCase()
+    if (excludedCompanies.some((value) => company.includes(value))) return false
+    if (excludedTitles.some((value) => title.includes(value))) return false
+    if (settings.remote_preference && settings.remote_preference !== 'no_preference' && job.remote_type !== settings.remote_preference) return false
+    if (workArrangements.size && !workArrangements.has(job.remote_type)) return false
+    if (settings.salary_min && job.salary_max && job.salary_max < settings.salary_min) return false
+    if (settings.salary_max && job.salary_min && job.salary_min > settings.salary_max) return false
+    if (postedAfter && job.posted_date) {
+      const posted = Date.parse(job.posted_date)
+      if (Number.isFinite(posted) && posted < postedAfter) return false
+    }
+    return true
+  })
+}
+
 /**
  * Run a search for a user: fetch from sources, merge with their stored jobs,
  * AI-score the new ones, persist. Returns counts + the newly-scored jobs.
  */
 export async function runSearch(userId, { query, location, scoreLimit = 15 } = {}) {
   const track = await getActiveTrack(userId)
-  const profile = await getProfile(userId)
+  const [profile, settings] = await Promise.all([getProfile(userId), getSearchSettings(userId)])
+  const profileTitles = profile.preferences?.titles || []
+  const experienceTitles = (profile.experience || []).map((item) => item?.title || item?.role).filter(Boolean)
   const queries = query
     ? [query]
-    : profile.preferences?.titles?.length
-    ? profile.preferences.titles
-    : ['junior software developer']
-  const loc = location || 'London, UK'
+    : settings.query
+      ? [settings.query]
+      : settings.job_titles?.length
+        ? settings.job_titles
+        : profileTitles.length
+          ? profileTitles
+          : experienceTitles.length
+            ? experienceTitles
+            : settings.keywords?.length
+              ? settings.keywords
+              : [track === 'construction' ? 'traffic marshal' : profile.headline || 'junior software developer']
+  const loc = location || settings.preferred_locations?.[0] || settings.location || profile.preferences?.locations?.[0] || profile.location || 'UK'
 
-  const fetched = await searchSources(queries, loc, track)
+  const rawFetched = await searchSources(queries, loc, track, { sources: settings.sources })
+  const fetched = applySearchFilters(rawFetched, settings)
 
   const existing = await getJobs(userId)
   const byUrl = new Map(existing.map((j) => [(j.source_url || j.id).toLowerCase(), j]))
@@ -72,7 +107,9 @@ export async function runSearch(userId, { query, location, scoreLimit = 15 } = {
   }
   const merged = [...byUrl.values()]
 
-  const unscored = merged.filter((j) => !j.match_analysis).slice(0, Math.min(scoreLimit, 25))
+  const unscored = profileReady(profile)
+    ? merged.filter((j) => !j.match_analysis).slice(0, Math.min(scoreLimit, 25))
+    : []
   await mapLimit(unscored, 2, async (job) => attachAnalysis(job, await scoreJob(profile, job)))
 
   await saveJobs(userId, merged)

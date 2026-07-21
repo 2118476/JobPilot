@@ -53,7 +53,7 @@ export const useUIStore = create<UIState>()(
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
       // Notifications
-      notificationBadge: { count: 3, hasUnread: true },
+      notificationBadge: { count: 0, hasUnread: false },
       setNotificationBadge: (badge) => set({ notificationBadge: badge }),
 
       // Search

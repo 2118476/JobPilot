@@ -351,36 +351,35 @@ function juniorRank(title = '') {
   return 1
 }
 
-export async function searchSources(queries, location, track = 'tech') {
+export async function searchSources(queries, location, track = 'tech', options = {}) {
   const qs = (Array.isArray(queries) ? queries : [queries]).map((q) => String(q || '').trim()).filter(Boolean)
   const fallback = track === 'construction' ? 'traffic marshal' : 'junior software developer'
   const list = qs.length ? qs.slice(0, 4) : [fallback]
   const primary = list[0]
+  const requested = Array.isArray(options.sources) ? new Set(options.sources) : null
+  const enabled = (id) => !requested || requested.has(id)
 
-  let tasks
+  const tasks = []
   if (track === 'construction') {
     // Construction/site roles live on UK general boards (Adzuna, Reed, GOV.UK
     // Find A Job) — not on the remote-tech boards. Query several titles to widen
     // coverage. Adzuna/Reed need a free key; Find A Job works without one.
-    tasks = [
-      fromFindAJob(primary, location),
-      fromArbeitnow(list.join(' ')),
-    ]
+    if (enabled('govuk')) tasks.push(fromFindAJob(primary, location))
+    if (enabled('arbeitnow')) tasks.push(fromArbeitnow(list.join(' ')))
     for (const q of list.slice(0, 3)) {
-      tasks.push(fromAdzuna(q, location), fromReed(q, location))
+      if (enabled('adzuna')) tasks.push(fromAdzuna(q, location))
+      if (enabled('reed')) tasks.push(fromReed(q, location))
     }
   } else {
-    tasks = [
-      fromAdzuna(primary, location),
-      fromReed(primary, location),
-      fromArbeitnow(list.join(' ')), // keyword-filtered across all target titles
-      fromTheMuse(primary, location), // Entry-Level filtered
-      fromJobicy(primary),
-      fromCivilService(primary),          // UK Civil Service Jobs
-      fromFindAJob(primary, location),    // GOV.UK Find A Job
-    ]
+    if (enabled('adzuna')) tasks.push(fromAdzuna(primary, location))
+    if (enabled('reed')) tasks.push(fromReed(primary, location))
+    if (enabled('arbeitnow')) tasks.push(fromArbeitnow(list.join(' ')))
+    if (enabled('themuse')) tasks.push(fromTheMuse(primary, location))
+    if (enabled('jobicy')) tasks.push(fromJobicy(primary))
+    if (enabled('civil-service')) tasks.push(fromCivilService(primary))
+    if (enabled('govuk')) tasks.push(fromFindAJob(primary, location))
     // Remotive is a keyword search — run it for each target title
-    for (const q of list.slice(0, 3)) tasks.push(fromRemotive(q))
+    if (enabled('remotive')) for (const q of list.slice(0, 3)) tasks.push(fromRemotive(q))
   }
 
   const results = await Promise.all(tasks)

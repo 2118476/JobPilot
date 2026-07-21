@@ -9,8 +9,7 @@ const WINDOW_MS = 60_000
 
 function clientKey(req) {
   if (req.userId) return `u:${req.userId}`
-  const fwd = req.headers['x-forwarded-for']
-  return 'ip:' + ((Array.isArray(fwd) ? fwd[0] : fwd)?.split(',')[0] || req.socket?.remoteAddress || 'unknown').trim()
+  return `ip:${req.ip || req.socket?.remoteAddress || 'unknown'}`
 }
 
 export function makeRateLimit({ max, message }) {

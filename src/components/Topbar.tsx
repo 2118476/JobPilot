@@ -14,6 +14,8 @@ import { useUIStore } from '@/store/uiStore'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/authStore'
 import { TrackSwitcher } from '@/components/TrackSwitcher'
+import { getProfile, getStats } from '@/lib/api'
+import { loadNotificationState } from '@/lib/notificationState'
 
 const pageTitleMap: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -36,13 +38,20 @@ const pageTitleMap: Record<string, string> = {
 
 export function Topbar() {
   const location = useLocation()
-  const { notificationBadge, setSearchOpen } = useUIStore()
+  const { notificationBadge, setNotificationBadge, setSearchOpen } = useUIStore()
   const { logout } = useAuth()
   const authUser = useAuthStore((s) => s.user)
   const displayName = authUser?.user_metadata?.full_name || authUser?.email?.split('@')[0] || 'User'
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
+  const [notificationPreferenceVersion, setNotificationPreferenceVersion] = useState(0)
+  const [unreadNotifications, setUnreadNotifications] = useState<{
+    id: string
+    title: string
+    message: string
+    action_url: string
+  }[]>([])
   const userDropdownRef = useRef<HTMLDivElement>(null)
   const notifDropdownRef = useRef<HTMLDivElement>(null)
 
@@ -76,11 +85,66 @@ export function Topbar() {
     return () => window.removeEventListener('keydown', handler)
   }, [setSearchOpen])
 
+  useEffect(() => {
+    const refresh = () => setNotificationPreferenceVersion((version) => version + 1)
+    window.addEventListener('jobpilot-settings-changed', refresh)
+    window.addEventListener('jobpilot-notifications-changed', refresh)
+    return () => {
+      window.removeEventListener('jobpilot-settings-changed', refresh)
+      window.removeEventListener('jobpilot-notifications-changed', refresh)
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    Promise.all([getStats(), getProfile()]).then(([stats, profile]) => {
+      if (!alive) return
+      let enabled = true
+      let typeSettings: Record<string, boolean> = {}
+      try {
+        enabled = JSON.parse(localStorage.getItem('jobpilot-inapp-notifs') || 'true') !== false
+        typeSettings = JSON.parse(localStorage.getItem('jobpilot-notification-types') || '{}')
+      } catch {
+        // Corrupt device preferences fall back to notifications enabled.
+      }
+      const items: { id: string; title: string; message: string; action_url: string }[] = []
+      if (enabled && typeSettings.profile_incomplete !== false && profile && !String(profile.full_name || '').trim()) {
+        items.push({
+          id: 'real-profile',
+          title: 'Complete your career profile',
+          message: 'Add your real experience so matching and AI guidance can be personalised.',
+          action_url: '/profile',
+        })
+      }
+      for (const deadline of enabled && typeSettings.follow_up !== false ? (stats?.deadlines || []).slice(0, 2) : []) {
+        items.push({
+          id: `real-deadline-${deadline.jobId}`,
+          title: `${deadline.action}: ${deadline.title}`,
+          message: `${deadline.company} — ${new Date(deadline.deadline).toLocaleDateString('en-GB')}`,
+          action_url: `/jobs/${deadline.jobId}`,
+        })
+      }
+      for (const job of enabled && typeSettings.strong_match !== false ? (stats?.topMatches || []).filter((item) => (item.match_score || 0) >= 85).slice(0, 3) : []) {
+        items.push({
+          id: `real-match-${job.id}`,
+          title: `${job.match_score}% match: ${job.title}`,
+          message: `${job.company} — review this opportunity in your workspace.`,
+          action_url: `/jobs/${job.id}`,
+        })
+      }
+      const persisted = loadNotificationState(authUser?.id)
+      const readIds = new Set(persisted.readIds)
+      const dismissedIds = new Set(persisted.dismissedIds)
+      const unread = items.filter((item) => !readIds.has(item.id) && !dismissedIds.has(item.id))
+      setUnreadNotifications(unread)
+      setNotificationBadge({ count: unread.length, hasUnread: unread.length > 0 })
+    })
+    return () => { alive = false }
+  }, [authUser?.id, notificationPreferenceVersion, setNotificationBadge])
+
   const handleLogout = async () => {
     await logout()
   }
-
-  const unreadNotifications: { id: string; title: string; message: string; action_url?: string }[] = []
 
   return (
     <header className="fixed top-0 right-0 left-0 lg:left-sidebar h-topbar bg-bg-primary/80 backdrop-blur-xl border-b border-border-subtle z-40 flex items-center justify-between px-4 lg:px-6 transition-all duration-300">

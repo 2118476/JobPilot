@@ -79,12 +79,12 @@ export function Toast({ toast }: ToastProps) {
   const config = toastConfig[toast.type]
   const Icon = config.icon
 
-  const [timeAgo, setTimeAgo] = useState(formatTimestamp(toast.timestamp ?? Date.now()))
+  const [timeAgo, setTimeAgo] = useState(() => formatTimestamp(toast.timestamp ?? 0))
   const [progress, setProgress] = useState(100)
   const progressRef = useRef<number>(100)
   const rafRef = useRef<number | null>(null)
   const duration = toast.duration ?? 5000
-  const startTimeRef = useRef(Date.now())
+  const startTimeRef = useRef(0)
 
   // Update timestamp display
   useEffect(() => {

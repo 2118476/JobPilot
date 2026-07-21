@@ -106,7 +106,7 @@ function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
   const offset = circumference - (score / 100) * circumference
 
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <div className="score-ring relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
         <circle
           cx={size / 2}
@@ -145,6 +145,7 @@ export default function Dashboard() {
   const [searchActive, setSearchActive] = useState(false)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [referenceTime] = useState(Date.now)
 
   const handleSaveJob = (job: Job) => {
     updateJob(job.id, { saved: true, status: 'saved' })
@@ -177,10 +178,10 @@ export default function Dashboard() {
   const deadlines = useMemo(
     () =>
       (stats?.deadlines || []).map((d) => {
-        const days = Math.ceil((new Date(d.deadline).getTime() - Date.now()) / 86400000)
+        const days = Math.ceil((new Date(d.deadline).getTime() - referenceTime) / 86400000)
         return { ...d, urgency: days <= 1 ? 'soon' : days <= 4 ? 'this_week' : 'later', days }
       }),
-    [stats],
+    [referenceTime, stats],
   )
 
   // Recent activity from the real pipeline

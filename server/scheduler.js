@@ -21,10 +21,11 @@ const done = new Set() // de-dupe per slot per day
 const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
 /** Which schedule slots apply to a user's chosen frequency. */
-function slotsFor(frequency) {
-  if (frequency === 'manual') return []
-  if (frequency === 'daily') return RUN_AT.slice(0, 1)
-  return RUN_AT // twice_daily (default)
+export function slotsFor(settings) {
+  if (settings.frequency === 'manual') return []
+  const morning = settings.morning_time || RUN_AT[0] || '08:00'
+  if (settings.frequency === 'daily') return [morning]
+  return [morning, settings.evening_time || RUN_AT[1] || '18:00']
 }
 
 async function recipientFor(userId, settings) {
@@ -33,7 +34,7 @@ async function recipientFor(userId, settings) {
 }
 
 async function runForUser({ userId, settings }, time) {
-  if (!slotsFor(settings.frequency).includes(time)) return
+  if (!slotsFor(settings).includes(time)) return
   const profile = await getProfile(userId)
   // Never search on an empty profile unless the user set an explicit query.
   if (!profileReady(profile) && !settings.query) return
@@ -59,20 +60,23 @@ async function tick() {
   const time = hhmm(now)
   const day = now.toISOString().slice(0, 10)
 
-  if (RUN_AT.includes(time)) {
+  {
     const key = `${day} ${time} search`
     if (!done.has(key)) {
-      done.add(key)
       try {
         const users = await listAutomationUsers()
-        console.log(`  [scheduler] ${time} — ${users.length} user(s) with automation on`)
-        for (const u of users) {
-          try {
-            await runForUser(u, time)
-          } catch (e) {
-            console.warn('  [scheduler] user run failed:', e.message)
+        const scheduledUsers = users.filter(({ settings }) => slotsFor(settings).includes(time))
+        if (scheduledUsers.length) {
+          done.add(key)
+          console.log(`  [scheduler] ${time} — ${scheduledUsers.length} scheduled user(s)`)
+          for (const u of scheduledUsers) {
+            try {
+              await runForUser(u, time)
+            } catch (e) {
+              console.warn('  [scheduler] user run failed:', e.message)
+            }
+            await new Promise((r) => setTimeout(r, 3000)) // pace between users (API quotas)
           }
-          await new Promise((r) => setTimeout(r, 3000)) // pace between users (API quotas)
         }
       } catch (e) {
         console.warn('  [scheduler] run failed:', e.message)
@@ -105,7 +109,7 @@ async function tick() {
 export function startScheduler() {
   if (process.env.ENABLE_SCHEDULER !== 'true') return
   console.log(
-    `  Scheduler: ON — per-user auto-search at ${RUN_AT.join(', ')}; deadline digest at ${DEADLINE_AT}` +
+    `  Scheduler: ON — per-user configured search times (defaults ${RUN_AT.join(', ')}); deadline digest at ${DEADLINE_AT}` +
       (emailConfigured() ? ' (email enabled)' : ' (email off — set RESEND_API_KEY)'),
   )
   const timer = setInterval(tick, 60_000)

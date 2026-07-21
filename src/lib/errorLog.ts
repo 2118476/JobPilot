@@ -65,7 +65,6 @@ export function logError(error: AppError, context?: string): void {
   }
 
   // Also log to console for immediate visibility
-  // eslint-disable-next-line no-console
   console.error(
     `[${entry.type.toUpperCase()}] ${entry.code}${context ? ` | ${context}` : ''}: ${entry.message}`,
     error.toJSON?.() ?? error,

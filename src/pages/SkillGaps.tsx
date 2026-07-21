@@ -81,7 +81,7 @@ export default function SkillGaps() {
   const [sortBy, setSortBy] = useState<'priority' | 'demand' | 'blocking'>('priority')
   const [userSkills, setUserSkills] = useState<{ name: string; level: 'advanced' | 'intermediate' | 'beginner'; category: string }[]>([])
   const [learningGoals, setLearningGoals] = useState<string[]>([])
-  const profileRef = useRef<Record<string, any>>({})
+  const profileRef = useRef<Record<string, unknown>>({})
 
   // Live skill gaps aggregated from this account's AI-scored jobs only.
   const [gaps, setGaps] = useState<{ skill: string; count: number; blocking: number; jobs: string[]; demand: number; userLevel: number; category: string }[]>([])
@@ -89,7 +89,7 @@ export default function SkillGaps() {
     Promise.all([getSkillGaps(), getProfile('tech')]).then(([liveGaps, stored]) => {
       if (liveGaps) setGaps(liveGaps)
       if (!stored) return
-      const profile = stored as Record<string, any>
+      const profile = stored as Record<string, unknown>
       profileRef.current = profile
       setLearningGoals(Array.isArray(profile.skills_to_learn) ? profile.skills_to_learn : [])
       const skills = Object.entries(profile.skills || {}).flatMap(([category, values]) =>
@@ -175,7 +175,7 @@ export default function SkillGaps() {
       default:
         return sorted
     }
-  }, [sortBy])
+  }, [blockingSkills, sortBy])
 
   return (
     <div className="space-y-6">

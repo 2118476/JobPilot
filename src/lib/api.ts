@@ -89,18 +89,23 @@ export async function getJobs(): Promise<Job[] | null> {
   }
 }
 
-/** Run a live job search + AI scoring. Returns scored jobs, or null on failure. */
-export async function searchJobs(opts: { query?: string; location?: string; scoreLimit?: number } = {}): Promise<
-  { jobs: Job[]; total: number; added: number; scored: number; ai: AIStatus } | null
-> {
-  try {
-    const r = await req<{ jobs: Job[]; total: number; added: number; scored: number; ai: AIStatus }>(
+export interface JobSearchResult { jobs: Job[]; total: number; added: number; scored: number; ai: AIStatus }
+
+/** Run a live search and preserve API errors for screens that need actionable feedback. */
+export async function searchJobsStrict(opts: { query?: string; location?: string; scoreLimit?: number } = {}): Promise<JobSearchResult> {
+  const r = await req<JobSearchResult>(
       '/api/jobs/search',
       { method: 'POST', body: JSON.stringify(opts) },
       120000,
-    )
-    if (r?.jobs) cacheJobs(r.jobs)
-    return r
+  )
+  if (r?.jobs) cacheJobs(r.jobs)
+  return r
+}
+
+/** Run a live job search + AI scoring. Returns scored jobs, or null on failure. */
+export async function searchJobs(opts: { query?: string; location?: string; scoreLimit?: number } = {}): Promise<JobSearchResult | null> {
+  try {
+    return await searchJobsStrict(opts)
   } catch {
     return null
   }
@@ -311,6 +316,35 @@ export async function exportData(): Promise<Record<string, unknown> | null> {
   }
 }
 
+export interface ManualJobInput {
+  title: string
+  company?: string
+  location?: string
+  description?: string
+  source?: string
+  source_url?: string
+  remote_type?: Job['remote_type']
+  salary_min?: number
+  salary_max?: number
+}
+
+export async function analyzeManualJob(input: ManualJobInput): Promise<Job> {
+  const result = await req<{ job: Job }>('/api/jobs/manual/analyze', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return result.job
+}
+
+export async function createManualJob(input: ManualJobInput): Promise<Job> {
+  const result = await req<{ job: Job }>('/api/jobs/manual', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  _jobCache = [result.job, ..._jobCache.filter((job) => job.id !== result.job.id)]
+  return result.job
+}
+
 export interface ImportResult {
   ok: boolean
   profiles: number
@@ -347,6 +381,24 @@ export interface AutomationSettings {
   email_alerts: boolean
   alert_email: string
   frequency: 'twice_daily' | 'daily' | 'manual'
+  keywords?: string[]
+  exclusions?: string[]
+  excluded_companies?: string[]
+  excluded_titles?: string[]
+  preferred_locations?: string[]
+  remote_preference?: 'remote' | 'onsite' | 'hybrid' | 'no_preference'
+  salary_min?: number
+  salary_max?: number
+  currency?: string
+  morning_time?: string
+  evening_time?: string
+  daily_search_limit?: number
+  sources?: string[]
+  seniority_levels?: string[]
+  role_types?: string[]
+  work_arrangements?: string[]
+  date_posted_days?: number
+  job_titles?: string[]
 }
 
 export async function getAutomationSettings(): Promise<AutomationSettings | null> {
@@ -392,7 +444,7 @@ export async function setActiveTrack(track: string): Promise<{ active: string; t
   }
 }
 
-/** Generate tailored interview prep for a job. Throws on failure (caller keeps mock). */
+/** Generate tailored interview prep for a job. Throws on failure so the caller can show a retry state. */
 export async function interviewPrep(job: Partial<Job>): Promise<{
   questions: InterviewQuestion[]
   fallback?: boolean

@@ -1,13 +1,13 @@
 // JobPilot "Save Job" popup — capture the current tab and POST it to the backend.
 
 const $ = (id) => document.getElementById(id)
-const DEFAULT_BACKEND = 'http://localhost:8787'
+const DEFAULT_BACKEND = 'https://jobpilot-backend-qg2w.onrender.com'
 
 // ── Load saved settings ──
-chrome.storage.sync.get(['backend', 'token'], (cfg) => {
+chrome.storage.sync.get(['backend'], (cfg) => {
   $('backend').value = cfg.backend || DEFAULT_BACKEND
-  $('token').value = cfg.token || ''
 })
+chrome.storage.session.get(['token'], (cfg) => { $('token').value = cfg.token || '' })
 
 // ── Prefill from the active tab ──
 async function prefill() {
@@ -45,7 +45,8 @@ $('save').addEventListener('click', async () => {
   const msg = $('msg')
   const backend = ($('backend').value || DEFAULT_BACKEND).replace(/\/$/, '')
   const token = $('token').value.trim()
-  chrome.storage.sync.set({ backend, token })
+  chrome.storage.sync.set({ backend })
+  chrome.storage.session.set({ token })
 
   const title = $('title').value.trim()
   if (!title) {
@@ -75,14 +76,14 @@ $('save').addEventListener('click', async () => {
         source: 'Extension',
       }),
     })
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-    const data = await res.json()
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
     const score = data?.job?.match_score
     msg.className = 'msg ok'
     msg.textContent = `Saved! AI match score: ${score ?? '—'}%`
   } catch (e) {
     msg.className = 'msg err'
-    msg.textContent = `Failed: ${e.message}. Check the backend URL is running.`
+    msg.textContent = `Failed: ${e.message}`
   } finally {
     btn.disabled = false
   }
