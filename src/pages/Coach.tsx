@@ -147,7 +147,15 @@ export default function Coach() {
     setSpeechError('')
     setLoading(true)
     try {
-      const history: CoachMessage[] = next.map(({ role, content: messageContent }) => ({ role, content: messageContent }))
+      const history: CoachMessage[] = next.map((message) => {
+        let messageContent = message.content
+        if (message.role === 'assistant' && message.updateState === 'declined') {
+          messageContent += '\n\n[JobPilot consent result: the user declined that profile update. Do not propose the same details again unless they explicitly ask.]'
+        } else if (message.role === 'assistant' && message.updateState === 'saved') {
+          messageContent += '\n\n[JobPilot consent result: the user approved the profile update and it was saved.]'
+        }
+        return { role: message.role, content: messageContent }
+      })
       const res = await coachChat(history)
       setMessages([...next, {
         role: 'assistant',
