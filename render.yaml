@@ -1,21 +1,22 @@
-# Render blueprint for the JobPilot backend API (Node/Express).
+# Render blueprint for the JobPilot backend API (Node/Express in Docker).
 # In Render: New → Blueprint → connect this repo → it reads this file.
 # Then set the secret env vars (marked sync:false) in the dashboard.
+# Existing services must receive sync:false values in the Environment tab.
 services:
   - type: web
-    name: jobpilot-api
-    runtime: node
+    name: jobpilot-backend
+    runtime: docker
     plan: free
-    buildCommand: npm install
-    startCommand: npm run start
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
-      - key: NODE_VERSION
-        value: "20"
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: GEMINI_SCORE_MODEL
+        value: gemini-2.5-flash-lite
       - key: NODE_ENV
         value: production
       # Comma-separated list of allowed browser origins (your Netlify URL).

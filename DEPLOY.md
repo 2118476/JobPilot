@@ -74,12 +74,12 @@ So new sign‑ups can log in immediately without a confirmation email:
 2. Top‑right **New +** → **Blueprint**.
 3. Click **Connect** next to your `2118476/JobPilot` repo. (If you don't see it, click
    **Configure account** / **Configure GitHub App**, grant access to the repo, come back.)
-4. Render reads **`render.yaml`** and shows a service called **`jobpilot-api`**. Click **Apply**
+4. Render reads **`render.yaml`** and shows a service called **`jobpilot-backend`**. Click **Apply**
    / **Create**.
 
 ### 2.2 Add the secret environment variables
 Render created the service but the secrets are blank. Set them:
-1. Open the **`jobpilot-api`** service → left tab **Environment**.
+1. Open the **`jobpilot-backend`** service → left tab **Environment**.
 2. For each of these, click **Add Environment Variable** (or edit the empty ones) and paste
    the value from your notepad:
    - `GEMINI_API_KEY` = *(your Gemini key)*
@@ -87,14 +87,19 @@ Render created the service but the secrets are blank. Set them:
    - `SUPABASE_SERVICE_ROLE_KEY` = *(your Supabase service_role secret)*
 3. Click **Save Changes**. Render will **redeploy** automatically.
 
-> `AI_PROVIDER`, `GEMINI_MODEL` and `NODE_VERSION` are already set by the blueprint.
+> `AI_PROVIDER`, `GEMINI_MODEL` and `GEMINI_SCORE_MODEL` are already set by the blueprint.
 > Leave `ADZUNA_*`, `REED_API_KEY`, `RESEND_API_KEY`, `EMAIL_TO` blank unless you have them.
+
+> **Existing DeployPilot/Render service:** Render ignores `sync: false` values during later
+> blueprint updates. Add `GEMINI_API_KEY` (and both Supabase secrets) directly in the
+> service's **Environment** tab, save, and redeploy.
 
 ### 2.3 Wait for it to go live and copy the URL
 1. Watch the **Logs** tab. When you see
    `Storage: Supabase Postgres (multi-user auth)` and no errors, it's live.
-2. At the top of the service page copy its URL — something like
-   **`https://jobpilot-api.onrender.com`**. Save it as `BACKEND_URL`.
+2. At the top of the service page copy its exact URL — something like
+   **`https://jobpilot-backend-xxxx.onrender.com`**. Save it as `BACKEND_URL`; the suffix
+   varies by service.
 3. Test it: open `BACKEND_URL/api/health` in your browser. You should see
    `{"ok":true, ... "auth":"supabase"}`. ✅
 
