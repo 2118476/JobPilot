@@ -16,6 +16,7 @@ import {
   getSearchSettings, saveSearchSettings, exportUserData, importUserData, deleteUserData,
 } from './store.js'
 import { aiStatus, scoreJob, tailorDocument, interviewPrep, coachReply } from './ai.js'
+import { mergeCoachProfileUpdate, sanitizeCoachProfileUpdate } from './profileUpdate.js'
 import { requireAuth } from './auth.js'
 import { supabaseConfigured } from './supabaseAdmin.js'
 import { rateLimit, aiRateLimit } from './rateLimit.js'
@@ -336,18 +337,25 @@ export function createApp() {
   // ─── AI Career Coach ─────────────────────────────────────────
   app.post('/api/coach', requireAuth, aiRateLimit, validate(schemas.coach), async (req, res) => {
     try {
-      const [profile, jobs, documents] = await Promise.all([
+      const [activeTrack, profile, jobs, documents] = await Promise.all([
+        getActiveTrack(req.userId),
         getProfile(req.userId),
         getJobs(req.userId),
         getDocuments(req.userId),
       ])
       const stats = computeStats(jobs)
       const result = await coachReply(profile, req.body.messages || [], {
+        activeTrack,
         stats,
         topJobs: stats.topMatches,
         documents,
       })
-      res.json({ ...result, ai: aiStatus() })
+      const proposal = sanitizeCoachProfileUpdate(result.profile_update)
+      res.json({
+        ...result,
+        profile_update: proposal ? { ...proposal, track: activeTrack } : null,
+        ai: aiStatus(),
+      })
     } catch (e) {
       res.status(500).json({ error: String(e.message || e) })
     }
@@ -356,6 +364,18 @@ export function createApp() {
   // ─── Job-specific AI assistant ───────────────────────────────
   // Chat about ONE job. The job is resolved from the AUTHENTICATED user's
   // own store — a job id belonging to someone else simply returns 404.
+  app.post('/api/coach/profile-update', requireAuth, validate(schemas.coachProfileUpdate), async (req, res) => {
+    try {
+      const track = req.body.track
+      const current = await getProfile(req.userId, track)
+      const { profile, proposal } = mergeCoachProfileUpdate(current, req.body.profile_update, track)
+      const saved = await saveProfile(req.userId, profile, track)
+      res.json({ ok: true, track, summary: proposal.summary, profile: saved })
+    } catch (e) {
+      res.status(422).json({ error: String(e.message || 'This profile update could not be applied.') })
+    }
+  })
+
   app.post('/api/assistant/jobs/:jobId/chat', requireAuth, aiRateLimit, validate(schemas.jobChat), async (req, res) => {
     try {
       const jobs = await getJobs(req.userId)

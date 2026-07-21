@@ -48,6 +48,14 @@ export const schemas = {
       .optional(),
   }),
 
+  coachProfileUpdate: z.object({
+    track: z.enum(['tech', 'construction']),
+    profile_update: z.object({
+      summary: z.string().trim().max(1200).optional(),
+      changes: z.record(z.string(), z.unknown()),
+    }),
+  }),
+
   document: z.object({
     job_id: shortStr(120).nullish(),
     type: z.enum(['cv', 'cl', 'cover_letter']).optional(),

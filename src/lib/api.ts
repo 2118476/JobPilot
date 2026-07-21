@@ -406,9 +406,34 @@ export interface CoachMessage {
   content: string
 }
 
+export interface CoachProfileUpdate {
+  summary: string
+  track: 'tech' | 'construction'
+  changes: Record<string, unknown>
+}
+
+export interface CoachResult {
+  text: string
+  profile_update?: CoachProfileUpdate | null
+  fallback?: boolean
+  ai: AIStatus
+}
+
 /** Chat with the AI career coach (grounded in profile + live pipeline). */
-export async function coachChat(messages: CoachMessage[]): Promise<{ text: string; fallback?: boolean; ai: AIStatus }> {
+export async function coachChat(messages: CoachMessage[]): Promise<CoachResult> {
   return req('/api/coach', { method: 'POST', body: JSON.stringify({ messages }) }, 90000)
+}
+
+export async function confirmCoachProfileUpdate(profileUpdate: CoachProfileUpdate): Promise<{
+  ok: boolean
+  track: 'tech' | 'construction'
+  summary: string
+  profile: Record<string, unknown>
+}> {
+  return req('/api/coach/profile-update', {
+    method: 'POST',
+    body: JSON.stringify({ track: profileUpdate.track, profile_update: profileUpdate }),
+  }, 15000)
 }
 
 /** Generate a tailored CV or cover letter via the AI. Throws on failure (caller shows fallback). */

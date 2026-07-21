@@ -27,6 +27,7 @@ const app = createApp()
 const tok = (id, email) => 'Bearer ' + Buffer.from(JSON.stringify({ id, email, ts: 1 })).toString('base64')
 const USER_A = tok('user-a', 'a@test.local')
 const USER_B = tok('user-b', 'b@test.local')
+const USER_C = tok('user-c', 'c@test.local')
 
 describe('health', () => {
   it('is public and reports local auth mode', async () => {
@@ -118,12 +119,82 @@ describe('AI guards', () => {
     expect(prompt).toContain('JOBPILOT-FIRST RULES')
     expect(prompt).toMatch(/Do not tell the user to browse LinkedIn/)
     expect(prompt).toContain('Career Profile, Project Library, Jobs, Applications, CV Manager')
+    expect(prompt).toContain('You CAN propose authenticated profile updates')
+    expect(prompt).toContain('save it only after Yes')
+    expect(prompt).toContain('RESPONSE CONTRACT')
   })
 
   it('does not pretend a blank profile is personalised', () => {
     const prompt = buildCoachSystem({ full_name: '', skills: {}, projects: [] }, { stats: {}, documents: [] })
     expect(prompt).toContain('PROFILE NOT COMPLETED')
     expect(prompt).toContain('ask one focused question at a time')
+  })
+})
+
+describe('AI Coach profile-update consent', () => {
+  it('merges approved facts into only the selected track and account', async () => {
+    const update = {
+      track: 'construction',
+      profile_update: {
+        summary: 'Add site-work experience, cards and location.',
+        changes: {
+          headline: 'Traffic Marshal / Banksman / Gateman',
+          location: 'Acton, London W3 6DR',
+          skills: { 'Site Operations': ['Traffic Marshalling', 'Banksman duties'] },
+          cards_certifications: ['Blue CPCS Traffic Marshal', 'CSCS card'],
+          experience: [{
+            role: 'Traffic Marshal / Banksman / Gateman',
+            dates: '6 years',
+            detail: 'Managed vehicle movements, directed deliveries and maintained site safety.',
+          }],
+          user_id: 'must-not-be-saved',
+        },
+      },
+    }
+    const approved = await request(app)
+      .post('/api/coach/profile-update')
+      .set('Authorization', USER_C)
+      .send(update)
+    expect(approved.status).toBe(200)
+    expect(approved.body).toMatchObject({ ok: true, track: 'construction' })
+
+    const construction = await request(app).get('/api/profile?track=construction').set('Authorization', USER_C)
+    expect(construction.body.location).toBe('Acton, London W3 6DR')
+    expect(construction.body.headline).toContain('Traffic Marshal')
+    expect(construction.body.cards_certifications).toEqual(expect.arrayContaining(['Blue CPCS Traffic Marshal', 'CSCS card']))
+    expect(construction.body.experience).toHaveLength(1)
+    expect(construction.body.user_id).toBeUndefined()
+
+    const second = await request(app)
+      .post('/api/coach/profile-update')
+      .set('Authorization', USER_C)
+      .send({
+        track: 'construction',
+        profile_update: {
+          summary: 'Add one more card without replacing existing details.',
+          changes: {
+            cards_certifications: ['CSCS card', 'First Aid at Work'],
+            experience: [{ role: 'Traffic Marshal / Banksman / Gateman', dates: '6 years' }],
+          },
+        },
+      })
+    expect(second.status).toBe(200)
+    expect(second.body.profile.cards_certifications).toEqual(expect.arrayContaining([
+      'Blue CPCS Traffic Marshal', 'CSCS card', 'First Aid at Work',
+    ]))
+    expect(second.body.profile.experience).toHaveLength(1)
+
+    const tech = await request(app).get('/api/profile?track=tech').set('Authorization', USER_C)
+    expect(tech.body.full_name).toBe('')
+    expect(tech.body.location).toBe('')
+  })
+
+  it('rejects profile updates without an explicit valid target track', async () => {
+    const response = await request(app)
+      .post('/api/coach/profile-update')
+      .set('Authorization', USER_C)
+      .send({ track: 'other', profile_update: { changes: { location: 'London' } } })
+    expect(response.status).toBe(400)
   })
 })
 

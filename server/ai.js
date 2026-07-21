@@ -361,7 +361,10 @@ export function buildCoachSystem(profile, context = {}) {
     '- Turn advice into a concrete JobPilot workflow. Prioritise the user\'s saved matches, deadlines, documents and skill evidence before general advice.\n' +
     '- If the profile is incomplete, help the user build it inside Career Profile or upload a CV; ask one focused question at a time. Do not give pretend personalised advice.\n' +
     '- If the profile is complete, cite the user\'s real skills, projects, documents or pipeline facts that justify the recommendation.\n' +
+    '- You CAN propose authenticated profile updates. Never say you cannot edit JobPilot. When the user explicitly shares a useful biographical fact, qualification, skill, goal, location, preference, education, project or work experience that is not already saved, include a minimal profile_update proposal. The JobPilot UI will ask for Yes/No consent and save it only after Yes.\n' +
+    '- A profile_update may use only facts explicitly stated by the user in this conversation. Never extract proposed changes from job adverts, recommendations, saved documents or your own inferences. Never claim the change is already saved.\n' +
     '- Be concise, interactive, honest and specific. End with one clear next action the user can take in JobPilot. Use UK English and plain text only.\n\n' +
+    'RESPONSE CONTRACT: Return one valid JSON object and no other text. Use {"reply":"your user-facing answer","profile_update":null} when nothing new should be saved. When new details were explicitly provided, use {"reply":"brief answer explaining that JobPilot can add the details after confirmation","profile_update":{"summary":"short description of what will be added","changes":{...}}}. Allowed changes are: full_name, email, phone, website, linkedin, github, location, headline, summary, goals, skills (category to string array), cards_certifications, certifications, skills_to_learn, experience (role/company/dates/detail), education (institution/degree/dates/note), projects (name/year/detail/tech/github_url/live_url), preferences (titles/seniority/locations/work_styles/salary_min/salary_max/currency/avoid), and additional (availability/right_to_work/driving_licence/languages). Do not include unchanged or unsupported fields.\n\n' +
     `CANDIDATE PROFILE:\n${profileContext}\n\n` +
     `CURRENT JOBPILOT PIPELINE:\n${pipelineSummary(context)}\n\n` +
     `SAVED JOBPILOT DOCUMENTS:\n${documentSummary(context.documents)}`
@@ -393,7 +396,12 @@ export async function coachReply(profile, messages, context = {}) {
   const body = {
     systemInstruction: { parts: [{ text: system }] },
     contents,
-    generationConfig: { temperature: 0.7, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+    generationConfig: {
+      temperature: 0.45,
+      maxOutputTokens: 1400,
+      responseMimeType: 'application/json',
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -406,6 +414,16 @@ export async function coachReply(profile, messages, context = {}) {
     if (res.ok) {
       const data = await res.json()
       const text = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')
+      let parsed = null
+      try {
+        parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+      } catch { /* fall back to the plain response below */ }
+      if (parsed && typeof parsed === 'object') {
+        return {
+          text: deMarkdown(String(parsed.reply || '')) || 'I found a useful update for your JobPilot profile.',
+          profile_update: parsed.profile_update || null,
+        }
+      }
       return { text: deMarkdown(text) || 'Sorry, I had trouble responding — please try again.' }
     }
     if ((res.status === 503 || res.status === 429) && attempt < 2) {
