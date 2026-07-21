@@ -3,7 +3,9 @@
 // Auth: every route except /api/health requires auth (see auth.js).
 // All data access is scoped to req.userId. Request bodies are
 // zod-validated; AI endpoints have stricter rate limits and require
-// a completed profile so nothing is ever invented.
+// real saved data so nothing is ever invented. Job-specific generation
+// requires a completed profile; the general coach can also help a new user
+// get started when their profile is still blank.
 // ─────────────────────────────────────────────────────────────
 import './config.js'
 import express from 'express'
@@ -328,7 +330,6 @@ export function createApp() {
   app.post('/api/coach', requireAuth, aiRateLimit, validate(schemas.coach), async (req, res) => {
     try {
       const profile = await getProfile(req.userId)
-      if (!profileReady(profile)) return res.status(422).json(PROFILE_INCOMPLETE)
       const jobs = await getJobs(req.userId)
       const stats = computeStats(jobs)
       const result = await coachReply(profile, req.body.messages || [], { stats, topJobs: stats.topMatches })

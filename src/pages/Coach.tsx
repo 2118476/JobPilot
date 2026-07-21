@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles, Send, Bot, User } from 'lucide-react'
-import { coachChat, type CoachMessage } from '@/lib/api'
+import { ApiError, coachChat, type CoachMessage } from '@/lib/api'
 
 const SUGGESTIONS = [
   'What should I focus on this week?',
@@ -31,8 +31,11 @@ export default function Coach() {
     try {
       const res = await coachChat(next)
       setMessages([...next, { role: 'assistant', content: res.text }])
-    } catch {
-      setMessages([...next, { role: 'assistant', content: 'Sorry — I could not reach the coach. Make sure the backend is running, then try again.' }])
+    } catch (error) {
+      const content = error instanceof ApiError
+        ? error.message
+        : 'Sorry — I could not reach the coach. Please try again in a moment.'
+      setMessages([...next, { role: 'assistant', content }])
     } finally {
       setLoading(false)
     }

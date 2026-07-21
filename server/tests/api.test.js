@@ -82,6 +82,16 @@ describe('manual jobs', () => {
 })
 
 describe('AI guards', () => {
+  it('allows the general coach to help before a profile is completed', async () => {
+    const res = await request(app)
+      .post('/api/coach')
+      .set('Authorization', USER_B)
+      .send({ messages: [{ role: 'user', content: 'Where should I start?' }] })
+    expect(res.status).toBe(200)
+    expect(res.body.text).toBeTruthy()
+    expect(res.body.fallback).toBe(true)
+  })
+
   it('refuses to generate documents for an incomplete profile', async () => {
     const res = await request(app)
       .post('/api/cv/tailor')

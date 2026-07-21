@@ -37,6 +37,18 @@ export interface AIStatus {
   note: string | null
 }
 
+export class ApiError extends Error {
+  status: number
+  code?: string
+
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit, timeoutMs = 120000): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -47,8 +59,11 @@ async function req<T>(path: string, init?: RequestInit, timeoutMs = 120000): Pro
       signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json', ...auth, ...(init?.headers || {}) },
     })
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-    return (await res.json()) as T
+    const body = await res.json().catch(() => null) as ({ error?: string; code?: string } & T) | null
+    if (!res.ok) {
+      throw new ApiError(body?.error || `${res.status} ${res.statusText}`, res.status, body?.code)
+    }
+    return body as T
   } finally {
     clearTimeout(timer)
   }
