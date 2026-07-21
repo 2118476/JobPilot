@@ -14,8 +14,8 @@ import { Upload } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────
 // Onboarding — collects a NEW user's details so job search and every
-// AI feature works on THEIR profile (the seeded profile belongs to the
-// app owner only). 4 short steps, saves to the backend on finish.
+// AI feature works on THEIR profile. 4 short steps, saves to the backend
+// on finish; no account inherits another user's example data.
 // ─────────────────────────────────────────────────────────────
 
 const easeOut = [0.16, 1, 0.3, 1] as [number, number, number, number]

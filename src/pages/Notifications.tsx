@@ -19,7 +19,6 @@ import {
   BarChart3,
   Sparkles,
 } from 'lucide-react'
-import { mockNotifications } from '@/data/mockData'
 import { formatDistanceToNow, isToday, isYesterday } from 'date-fns'
 
 // ─────────────────────────────────────────────
@@ -73,209 +72,20 @@ const notificationConfig: Record<NotificationType, { icon: typeof Award; color: 
 }
 
 // ─────────────────────────────────────────────
-// Generate 15 mock notifications from base data
-// ─────────────────────────────────────────────
-
-function generateMockNotifications(): NotificationItem[] {
-  const baseItems: NotificationItem[] = [
-    {
-      id: 'notif-001',
-      type: 'strong_match',
-      title: 'Strong match found: Junior Java Developer at PublicSector Digital — 92/100',
-      message: 'Your Spring Boot and REST API experience align perfectly with this role requirements.',
-      read: false,
-      timestamp: '2025-01-08T14:00:00Z',
-      filterCategory: 'jobs',
-    },
-    {
-      id: 'notif-002',
-      type: 'closing_soon',
-      title: 'Application deadline approaching: Graduate Developer at NHS Digital closes tomorrow',
-      message: 'You saved this job 3 days ago but have not applied yet. Closing date is tomorrow at 5 PM.',
-      read: false,
-      timestamp: '2025-01-08T12:00:00Z',
-      filterCategory: 'jobs',
-    },
-    {
-      id: 'notif-003',
-      type: 'unapplied_match',
-      title: 'Not applied to strong match: Backend Developer at TechFlow (88/100)',
-      message: 'This job has been saved for 5 days. Your CV is already tailored — apply now.',
-      read: false,
-      timestamp: '2025-01-08T10:00:00Z',
-      filterCategory: 'applications',
-    },
-    {
-      id: 'notif-004',
-      type: 'cv_ready',
-      title: 'Tailored CV ready for Backend Developer at TechFlow',
-      message: '5 skills reordered, summary rewritten for Java focus. Review and download.',
-      read: false,
-      timestamp: '2025-01-08T09:30:00Z',
-      filterCategory: 'applications',
-    },
-    {
-      id: 'notif-005',
-      type: 'cl_ready',
-      title: 'Cover letter ready for Junior Java Developer at DataStream',
-      message: 'Personalized cover letter generated highlighting your database and Spring Boot experience.',
-      read: true,
-      timestamp: '2025-01-08T08:00:00Z',
-      filterCategory: 'applications',
-    },
-    {
-      id: 'notif-006',
-      type: 'follow_up',
-      title: 'Follow-up due: Application to Civil Service Digital Developer',
-      message: 'You applied 7 days ago. Consider sending a polite follow-up email.',
-      read: false,
-      timestamp: '2025-01-07T18:00:00Z',
-      filterCategory: 'applications',
-    },
-    {
-      id: 'notif-007',
-      type: 'interview',
-      title: 'Interview tomorrow: Junior Developer at CodeWorks at 2:00 PM',
-      message: 'Video call via Zoom. Link in application details. Topic: System design + coding.',
-      read: true,
-      timestamp: '2025-01-07T14:00:00Z',
-      filterCategory: 'applications',
-    },
-    {
-      id: 'notif-008',
-      type: 'search_failed',
-      title: 'Search failed: Adzuna API rate limited',
-      message: 'Adzuna API returned 429. Will retry in next scheduled run. Other sources unaffected.',
-      read: true,
-      timestamp: '2025-01-07T10:00:00Z',
-      filterCategory: 'system',
-    },
-    {
-      id: 'notif-009',
-      type: 'api_limit',
-      title: 'API usage at 80% — approaching daily limit',
-      message: 'You have used 24 of 30 daily API calls. Consider reducing search frequency.',
-      read: true,
-      timestamp: '2025-01-07T08:00:00Z',
-      filterCategory: 'system',
-    },
-    {
-      id: 'notif-010',
-      type: 'weekly_report',
-      title: 'Weekly report ready: Jan 1–7',
-      message: '12 jobs found, 3 applications sent, 1 interview scheduled. View full report.',
-      read: true,
-      timestamp: '2025-01-07T06:00:00Z',
-      filterCategory: 'system',
-    },
-    {
-      id: 'notif-011',
-      type: 'strong_match',
-      title: 'Strong match found: React Developer at StartupHub — 85/100',
-      message: 'Your React and TypeScript skills are a strong match for this remote role.',
-      read: true,
-      timestamp: '2025-01-06T16:00:00Z',
-      filterCategory: 'jobs',
-    },
-    {
-      id: 'notif-012',
-      type: 'cv_ready',
-      title: 'Tailored CV ready: Full Stack Developer at CloudNet',
-      message: 'CV optimized with React, Node.js, and PostgreSQL highlights.',
-      read: true,
-      timestamp: '2025-01-05T11:00:00Z',
-      filterCategory: 'applications',
-    },
-    {
-      id: 'notif-013',
-      type: 'search_failed',
-      title: 'Indeed source unavailable',
-      message: 'Indeed blocked automated access. 11 of 12 sources checked successfully.',
-      read: true,
-      timestamp: '2025-01-05T09:00:00Z',
-      filterCategory: 'system',
-    },
-    {
-      id: 'notif-014',
-      type: 'closing_soon',
-      title: 'Closing soon: Graduate Scheme at GovTech UK',
-      message: 'Applications close in 3 days. Strong match for your profile — 81/100.',
-      read: true,
-      timestamp: '2025-01-04T15:00:00Z',
-      filterCategory: 'jobs',
-    },
-    {
-      id: 'notif-015',
-      type: 'follow_up',
-      title: 'Follow-up: No response from DataCorp application (14 days)',
-      message: 'It has been 2 weeks since you applied. Consider a polite status inquiry.',
-      read: true,
-      timestamp: '2025-01-03T10:00:00Z',
-      filterCategory: 'applications',
-    },
-  ]
-
-  // Also include the mockData notifications, mapping their types
-  const mappedFromMock = mockNotifications.map((n) => {
-    const typeMap: Record<string, NotificationType> = {
-      job_found: 'strong_match',
-      score_ready: 'cv_ready',
-      interview_reminder: 'interview',
-      weekly_report: 'weekly_report',
-      cv_ready: 'cl_ready',
-      application_deadline: 'closing_soon',
-      system: 'api_limit',
-      match_alert: 'strong_match',
-    }
-    const categoryMap: Record<string, 'jobs' | 'applications' | 'system'> = {
-      job_found: 'jobs',
-      score_ready: 'applications',
-      interview_reminder: 'applications',
-      weekly_report: 'system',
-      cv_ready: 'applications',
-      application_deadline: 'jobs',
-      system: 'system',
-      match_alert: 'jobs',
-    }
-    return {
-      id: n.id,
-      type: typeMap[n.type] || 'system',
-      title: n.title,
-      message: n.message,
-      read: n.read,
-      timestamp: n.created_at,
-      filterCategory: categoryMap[n.type] || 'system',
-    }
-  })
-
-  // Merge and deduplicate by ID
-  const mergedMap = new Map<string, NotificationItem>()
-  ;[...mappedFromMock, ...baseItems].forEach((item) => {
-    if (!mergedMap.has(item.id)) {
-      mergedMap.set(item.id, item)
-    }
-  })
-
-  return Array.from(mergedMap.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-}
-
-// ─────────────────────────────────────────────
-// Main Component
+// Account-scoped notification filters
 // ─────────────────────────────────────────────
 
 type FilterTab = 'all' | 'unread' | 'jobs' | 'applications' | 'system'
 
 export default function Notifications() {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(generateMockNotifications())
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
 
-  // Replace the demo items with REAL notifications derived from the account's
-  // live pipeline (deadlines, strong matches, interviews, generated documents,
-  // profile completeness). Demo items remain only when the backend is down.
+  // Build notifications only from this account's live workspace.
   useEffect(() => {
     let alive = true
     ;(async () => {
       const [stats, jobs, docs, profile] = await Promise.all([getStats(), getJobs(), getDocuments(), getProfile()])
-      if (!alive || (!stats && !jobs && !docs)) return // backend unreachable → keep demo
+      if (!alive || (!stats && !jobs && !docs)) return
       const items: NotificationItem[] = []
       const nowIso = new Date().toISOString()
 

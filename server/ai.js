@@ -329,25 +329,59 @@ function pipelineSummary(ctx = {}) {
     `Jobs tracked: ${s.totalJobs || 0} (${s.scoredJobs || 0} AI-scored). ` +
     `Strong matches (85%+): ${s.strongMatches || 0}. Applied: ${s.applied || 0}. ` +
     `Interviews: ${s.interviewsScheduled || 0}. Average match score: ${s.averageMatchScore || 0}%. ` +
-    `Top current matches: ${top || 'none yet — the candidate should run a search'}.`
+    `Top current matches: ${top || 'none yet — use JobPilot Search after the profile is ready'}.`
   )
+}
+
+function documentSummary(documents = []) {
+  const usable = documents
+    .filter((d) => d?.content)
+    .slice(0, 8)
+    .map((d) => {
+      const label = `${d.type === 'cover_letter' ? 'Cover letter' : 'CV'}${d.job_title ? ` for ${d.job_title}` : ''}${d.company ? ` at ${d.company}` : ''}`
+      return `--- ${label} ---\n${String(d.content).slice(0, 1800)}`
+    })
+  return usable.length ? usable.join('\n\n').slice(0, 9000) : 'No saved CVs or cover letters yet.'
+}
+
+export function buildCoachSystem(profile, context = {}) {
+  const hasProfile = profileReadyForCoach(profile)
+  const profileContext = hasProfile
+    ? profileText(profile)
+    : 'PROFILE NOT COMPLETED. Do not assume a name, role, skills, education, experience, location or goals.'
+
+  return (
+    'You are JobPilot Coach: the embedded career intelligence inside JobPilot, not a generic chatbot. ' +
+    'Your job is to help this user make the best next move using their own JobPilot workspace. ' +
+    'Use the saved profile, projects, CVs, cover letters, job matches and pipeline below as the source of truth. ' +
+    'Never invent experience or claim the user has data that is not present.\n\n' +
+    'JOBPILOT-FIRST RULES:\n' +
+    '- Keep the user inside JobPilot whenever JobPilot can perform the task. Refer to the exact in-app area: Career Profile, Project Library, Jobs, Applications, CV Manager, Skill Gaps, Search Settings, or AI Coach.\n' +
+    '- Do not tell the user to browse LinkedIn, Indeed, job boards, social media, or generic third-party tools. Mention an external site only when the user explicitly asks, when a specific saved job requires its application link, or when JobPilot cannot perform that necessary step.\n' +
+    '- Turn advice into a concrete JobPilot workflow. Prioritise the user\'s saved matches, deadlines, documents and skill evidence before general advice.\n' +
+    '- If the profile is incomplete, help the user build it inside Career Profile or upload a CV; ask one focused question at a time. Do not give pretend personalised advice.\n' +
+    '- If the profile is complete, cite the user\'s real skills, projects, documents or pipeline facts that justify the recommendation.\n' +
+    '- Be concise, interactive, honest and specific. End with one clear next action the user can take in JobPilot. Use UK English and plain text only.\n\n' +
+    `CANDIDATE PROFILE:\n${profileContext}\n\n` +
+    `CURRENT JOBPILOT PIPELINE:\n${pipelineSummary(context)}\n\n` +
+    `SAVED JOBPILOT DOCUMENTS:\n${documentSummary(context.documents)}`
+  )
+}
+
+function profileReadyForCoach(profile) {
+  return !!(profile?.full_name || profile?.headline || profile?.summary || Object.keys(profile?.skills || {}).length || profile?.projects?.length)
 }
 
 export async function coachReply(profile, messages, context = {}) {
   if (!cfg().live) {
     return {
       text:
-        'The AI coach needs a Gemini API key in server/.env to chat. In the meantime: prioritise your strongest matches, tailor your CV for each role, and prepare answers to the common interview questions.',
+        'Start in Career Profile and add your real target role, skills and one project. Then run Search in JobPilot so I can rank your next actions from real matches.',
       fallback: true,
     }
   }
   const { geminiKey, geminiModel } = cfg()
-  const system =
-    'You are an elite, warm and honest UK tech careers coach helping a JUNIOR/GRADUATE software developer land their first role. ' +
-    'Give specific, practical, encouraging, realistic advice. Ground every answer in THIS candidate\'s real profile and their current job-hunt pipeline below — reference their actual skills, projects and matches. ' +
-    'Be concise and actionable; prefer a few short paragraphs or simple "- " bullets. UK English. ' +
-    'Plain text only — NO Markdown, no asterisks, no bold. Never invent experience the candidate does not have.\n\n' +
-    `CANDIDATE PROFILE:\n${profileText(profile)}\n\nCURRENT JOB-HUNT PIPELINE:\n${pipelineSummary(context)}`
+  const system = buildCoachSystem(profile, context)
 
   const contents = (messages || [])
     .slice(-12)

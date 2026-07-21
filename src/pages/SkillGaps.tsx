@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import {
   Search,
@@ -16,8 +16,7 @@ import {
   SortDesc,
   X,
 } from 'lucide-react'
-import { mockSkillGaps } from '@/data/mockData'
-import { getSkillGaps } from '@/lib/api'
+import { getSkillGaps, getProfile, saveProfile } from '@/lib/api'
 import {
   BarChart,
   Bar,
@@ -54,62 +53,6 @@ const staggerContainer = {
 
 // ─── Skill Data ──────────────────────────────
 
-const userSkills = [
-  { name: 'Java', level: 'advanced', category: 'Languages' },
-  { name: 'Spring Boot', level: 'advanced', category: 'Frameworks' },
-  { name: 'React', level: 'advanced', category: 'Frameworks' },
-  { name: 'MySQL', level: 'advanced', category: 'Databases' },
-  { name: 'PostgreSQL', level: 'intermediate', category: 'Databases' },
-  { name: 'REST APIs', level: 'advanced', category: 'Tools' },
-  { name: 'JWT', level: 'intermediate', category: 'Tools' },
-  { name: 'Python', level: 'intermediate', category: 'Languages' },
-  { name: 'Twilio', level: 'intermediate', category: 'Tools' },
-]
-
-const blockingSkills = [
-  { skill: 'AWS', mentions: 18, blocking: 5, priority: 'Critical' as const, jobs: ['Junior DevOps Engineer', 'Cloud Engineer Graduate', 'Backend Developer', 'Platform Engineer', 'Full Stack Developer'] },
-  { skill: 'Docker', mentions: 12, blocking: 3, priority: 'High' as const, jobs: ['Full Stack Developer', 'Platform Engineer Junior', 'Backend Developer'] },
-  { skill: 'TypeScript', mentions: 10, blocking: 2, priority: 'High' as const, jobs: ['React/TypeScript Frontend Developer', 'Full Stack TypeScript Developer'] },
-  { skill: 'Azure', mentions: 10, blocking: 2, priority: 'High' as const, jobs: ['Azure Cloud Engineer', 'Microsoft Stack Developer'] },
-  { skill: 'C#', mentions: 8, blocking: 1, priority: 'Medium' as const, jobs: ['.NET Backend Developer'] },
-  { skill: 'Kubernetes', mentions: 8, blocking: 1, priority: 'Medium' as const, jobs: ['DevOps Engineer'] },
-]
-
-const learnRecommendations = [
-  {
-    title: 'Learn AWS Basics',
-    priority: 'Critical' as const,
-    impact: 'highest impact',
-    description: 'AWS appears in 18 jobs this week. Free tier available.',
-    suggestion: 'Deploy one project to AWS EC2 or S3',
-    icon: Sparkles,
-  },
-  {
-    title: 'Learn Docker Fundamentals',
-    priority: 'High' as const,
-    impact: 'high impact',
-    description: '12 jobs mention Docker. Containerization is expected for backend roles.',
-    suggestion: 'Dockerize your Hair Salon Booking System',
-    icon: BookOpen,
-  },
-  {
-    title: 'Practice SQL Interview Questions',
-    priority: 'Medium' as const,
-    impact: 'common interview topic',
-    description: 'SQL appears in 35 jobs but interview questions often trip up juniors.',
-    suggestion: 'Focus on indexing, joins, and query optimization',
-    icon: Target,
-  },
-  {
-    title: 'Add TypeScript to a Project',
-    priority: 'Medium' as const,
-    impact: 'nice to have',
-    description: '10 jobs mention TypeScript. Easy to add to React projects.',
-    suggestion: 'Convert your React components to TypeScript gradually',
-    icon: Code,
-  },
-]
-
 const priorityColors: Record<string, { badge: string; border: string; text: string; bg: string }> = {
   Critical: { badge: 'bg-accent-rose/[0.12] text-accent-rose', border: 'border-l-accent-rose', text: 'text-accent-rose', bg: 'bg-accent-rose/[0.08]' },
   High: { badge: 'bg-accent-amber/[0.12] text-accent-amber', border: 'border-l-accent-amber', text: 'text-accent-amber', bg: 'bg-accent-amber/[0.08]' },
@@ -136,14 +79,59 @@ function getChartColor(demand: number, userLevel: number) {
 export default function SkillGaps() {
   const [skillCategory, setSkillCategory] = useState('All')
   const [sortBy, setSortBy] = useState<'priority' | 'demand' | 'blocking'>('priority')
+  const [userSkills, setUserSkills] = useState<{ name: string; level: 'advanced' | 'intermediate' | 'beginner'; category: string }[]>([])
+  const [learningGoals, setLearningGoals] = useState<string[]>([])
+  const profileRef = useRef<Record<string, any>>({})
 
-  // Live skill gaps aggregated from AI-scored jobs (fallback to seed data)
-  const [gaps, setGaps] = useState<{ skill: string; demand: number; userLevel: number; category: string }[]>(mockSkillGaps)
+  // Live skill gaps aggregated from this account's AI-scored jobs only.
+  const [gaps, setGaps] = useState<{ skill: string; count: number; blocking: number; jobs: string[]; demand: number; userLevel: number; category: string }[]>([])
   useEffect(() => {
-    getSkillGaps()
-      .then((g) => { if (g && g.length) setGaps(g) })
-      .catch(() => {})
+    Promise.all([getSkillGaps(), getProfile('tech')]).then(([liveGaps, stored]) => {
+      if (liveGaps) setGaps(liveGaps)
+      if (!stored) return
+      const profile = stored as Record<string, any>
+      profileRef.current = profile
+      setLearningGoals(Array.isArray(profile.skills_to_learn) ? profile.skills_to_learn : [])
+      const skills = Object.entries(profile.skills || {}).flatMap(([category, values]) =>
+        (Array.isArray(values) ? values : []).map((value) => {
+          const name = String(value)
+          const uiCategory = /language/i.test(category) ? 'Languages'
+            : /framework/i.test(category) ? 'Frameworks'
+            : /database/i.test(category) ? 'Databases'
+            : 'Tools'
+          const level = /learning|studying|beginner/i.test(name) ? 'beginner' as const : 'intermediate' as const
+          return { name, level, category: uiCategory }
+        }),
+      )
+      setUserSkills(skills)
+    }).catch(() => {})
   }, [])
+
+  const blockingSkills = useMemo(() => gaps.map((gap) => ({
+    skill: gap.skill,
+    mentions: gap.count,
+    blocking: gap.blocking,
+    jobs: gap.jobs || [],
+    priority: (gap.blocking >= 4 || gap.demand >= 85 ? 'Critical' : gap.blocking >= 2 || gap.demand >= 60 ? 'High' : 'Medium') as 'Critical' | 'High' | 'Medium',
+  })), [gaps])
+
+  const learnRecommendations = useMemo(() => blockingSkills.slice(0, 4).map((skill) => ({
+    title: `Build evidence for ${skill.skill}`,
+    priority: skill.priority,
+    impact: skill.priority === 'Critical' ? 'highest impact' : skill.priority === 'High' ? 'high impact' : 'useful next step',
+    description: `${skill.skill} appears in ${skill.mentions} of your matched job descriptions.`,
+    suggestion: `Add ${skill.skill} to your JobPilot learning goals and link it to a real project when practised.`,
+    icon: Sparkles,
+    skill: skill.skill,
+  })), [blockingSkills])
+
+  const addLearningGoal = async (skill: string) => {
+    if (learningGoals.includes(skill)) return
+    const next = [...learningGoals, skill]
+    setLearningGoals(next)
+    const saved = await saveProfile({ ...profileRef.current, skills_to_learn: next }, 'tech')
+    if (saved) profileRef.current = saved
+  }
 
   // Summary stats
   const totalSkills = gaps.length
@@ -205,7 +193,7 @@ export default function SkillGaps() {
             accentColor: 'border-t-accent-cyan',
             value: totalSkills.toString(),
             label: 'Unique skills mentioned',
-            sub: 'across 247 jobs',
+            sub: 'across your AI-scored jobs',
             subColor: 'text-text-muted',
           },
           {
@@ -214,7 +202,7 @@ export default function SkillGaps() {
             accentColor: 'border-t-accent-emerald',
             value: skillsHave.toString(),
             label: 'Skills you have',
-            sub: `${Math.round((skillsHave / totalSkills) * 100)}% coverage`,
+            sub: `${totalSkills ? Math.round((skillsHave / totalSkills) * 100) : 0}% coverage`,
             subColor: 'text-accent-emerald',
           },
           {
@@ -515,7 +503,7 @@ export default function SkillGaps() {
                   </div>
                   <p className="text-xs text-text-secondary mb-1.5">{rec.description}</p>
                   <p className="text-[11px] text-text-muted mb-3">{rec.suggestion}</p>
-                  <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-default text-xs text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors">
+                  <button onClick={() => addLearningGoal(rec.skill)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-default text-xs text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors">
                     <Plus size={12} />
                     Add to Goals
                   </button>
@@ -538,8 +526,8 @@ export default function SkillGaps() {
           <h3 className="font-heading text-lg font-semibold text-text-primary">Your Learning Goals</h3>
         </div>
         <div className="flex flex-wrap gap-2">
-          {['AWS Certified', 'Docker Mastery', 'TypeScript Deep Dive', 'System Design'].map((goal) => {
-            const priority = goal.includes('AWS') ? 'Critical' : goal.includes('Docker') ? 'High' : goal.includes('TypeScript') ? 'Medium' : 'Low'
+          {learningGoals.map((goal) => {
+            const priority = blockingSkills.find((skill) => skill.skill === goal)?.priority || 'Low'
             const colors = priorityColors[priority]
             return (
               <div
@@ -563,5 +551,3 @@ export default function SkillGaps() {
     </div>
   )
 }
-
-

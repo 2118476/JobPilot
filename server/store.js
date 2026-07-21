@@ -178,14 +178,75 @@ export async function listAutomationUsers() {
 
 // ─── Per-user data export / deletion (GDPR-style) ────────────
 export async function exportUserData(userId) {
-  const [profileTech, profileConstruction, jobs, documents, settings] = await Promise.all([
+  const [activeTrack, profileTech, profileConstruction, jobs, documents, settings] = await Promise.all([
+    getActiveTrack(userId),
     getProfile(userId, 'tech'),
     getProfile(userId, 'construction'),
     getJobs(userId),
     getDocuments(userId),
     getSearchSettings(userId),
   ])
-  return { exported_at: new Date().toISOString(), profiles: { tech: profileTech, construction: profileConstruction }, jobs, documents, search_settings: settings }
+  return {
+    format: 'jobpilot-workspace',
+    version: 1,
+    exported_at: new Date().toISOString(),
+    active_track: activeTrack,
+    profiles: { tech: profileTech, construction: profileConstruction },
+    jobs,
+    documents,
+    search_settings: settings,
+  }
+}
+
+/** Restore a JobPilot workspace into the authenticated user's own account. */
+export async function importUserData(userId, archive, { replace = false } = {}) {
+  if (!archive || typeof archive !== 'object' || Array.isArray(archive)) {
+    throw new Error('Invalid JobPilot archive.')
+  }
+
+  const profiles = archive.profiles && typeof archive.profiles === 'object' ? archive.profiles : {}
+  const incomingJobs = Array.isArray(archive.jobs) ? archive.jobs.slice(0, 2000) : []
+  const incomingDocuments = Array.isArray(archive.documents) ? archive.documents.slice(0, 200) : []
+
+  if (replace) await deleteUserData(userId)
+
+  for (const track of ['tech', 'construction']) {
+    const profile = profiles[track]
+    if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
+      await saveProfile(userId, { ...emptyProfile(track), ...profile, track }, track)
+    }
+  }
+
+  const existingJobs = replace ? [] : await getJobs(userId)
+  const jobsById = new Map(existingJobs.filter((j) => j?.id).map((j) => [j.id, j]))
+  for (const job of incomingJobs) {
+    if (job && typeof job === 'object' && job.id && job.title) {
+      jobsById.set(String(job.id), { ...job, user_id: userId })
+    }
+  }
+  await saveJobs(userId, [...jobsById.values()])
+
+  const existingDocuments = replace ? [] : await getDocuments(userId)
+  const docsById = new Map(existingDocuments.filter((d) => d?.id).map((d) => [d.id, d]))
+  for (const doc of incomingDocuments) {
+    if (doc && typeof doc === 'object' && doc.id && doc.content) docsById.set(String(doc.id), doc)
+  }
+  await saveDocuments(userId, [...docsById.values()].slice(0, 200))
+
+  if (archive.search_settings && typeof archive.search_settings === 'object') {
+    await saveSearchSettings(userId, archive.search_settings)
+  }
+  if (archive.active_track === 'tech' || archive.active_track === 'construction') {
+    await setActiveTrack(userId, archive.active_track)
+  }
+
+  return {
+    ok: true,
+    profiles: Object.keys(profiles).filter((t) => t === 'tech' || t === 'construction').length,
+    jobs: jobsById.size,
+    documents: docsById.size,
+    active_track: await getActiveTrack(userId),
+  }
 }
 
 export async function deleteUserData(userId) {

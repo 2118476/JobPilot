@@ -28,8 +28,7 @@ import {
   Download,
   Bell,
 } from 'lucide-react'
-import { mockJobs, mockProjects } from '@/data/mockData'
-import { tailorDocument, findCachedJob, interviewPrep, updateJob, saveDocument, getJobs, type InterviewQuestion } from '@/lib/api'
+import { tailorDocument, findCachedJob, interviewPrep, updateJob, saveDocument, getJobs, getProfile, type InterviewQuestion } from '@/lib/api'
 import { downloadAsPdf } from '@/lib/pdf'
 import { jobVerdict, verdictClasses } from '@/lib/verdict'
 import { JobAssistant } from '@/components/JobAssistant'
@@ -228,13 +227,14 @@ export default function JobDetail() {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
   const [searchParams] = useSearchParams()
-  const [job, setJob] = useState<Job | undefined>(() => mockJobs.find(j => j.id === id) || findCachedJob(id || ''))
+  const [job, setJob] = useState<Job | undefined>(() => findCachedJob(id || ''))
   const [resolving, setResolving] = useState(false)
+  const [profileProjects, setProfileProjects] = useState<{ id: string; name: string; short_description: string; technologies: string[] }[]>([])
 
-  // Resolve the job: mock/cache first, otherwise fetch from the backend so
+  // Resolve the job from this account's cache, otherwise fetch the backend so
   // direct links, Dashboard clicks and page refreshes all work.
   useEffect(() => {
-    const local = mockJobs.find(j => j.id === id) || findCachedJob(id || '')
+    const local = findCachedJob(id || '')
     if (local) { setJob(local); return }
     setResolving(true)
     let alive = true
@@ -244,6 +244,18 @@ export default function JobDetail() {
       .finally(() => { if (alive) setResolving(false) })
     return () => { alive = false }
   }, [id])
+
+  useEffect(() => {
+    getProfile('tech').then((profile) => {
+      const projects = (profile as { projects?: Record<string, unknown>[] } | null)?.projects || []
+      setProfileProjects(projects.map((project, index) => ({
+        id: String(project.id || `project-${index}`),
+        name: String(project.name || ''),
+        short_description: String(project.short_description || project.detail || project.description || ''),
+        technologies: Array.isArray(project.tech) ? project.tech.map(String) : [],
+      })))
+    }).catch(() => {})
+  }, [])
 
   const [saved, setSaved] = useState(false)
   const [skipped, setSkipped] = useState(false)
@@ -314,11 +326,13 @@ export default function JobDetail() {
   const interviewQuestions = useMemo(() => (job ? generateInterviewQuestions(job) : []), [job?.id])
 
   const matchedProjects = useMemo(() => {
-    return mockProjects
-      .filter(p => p.relevance_score && p.relevance_score > 60)
-      .sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0))
+    if (!job) return []
+    const jobText = `${job.title} ${job.description || ''} ${(job.requirements || []).join(' ')}`.toLowerCase()
+    return profileProjects
+      .map((project) => ({ ...project, relevance: project.technologies.filter((tech) => jobText.includes(tech.toLowerCase())).length }))
+      .sort((a, b) => b.relevance - a.relevance)
       .slice(0, 3)
-  }, [job?.id])
+  }, [job, profileProjects])
 
   if (!job) {
     if (resolving) {

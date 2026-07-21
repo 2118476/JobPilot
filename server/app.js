@@ -13,7 +13,7 @@ import cors from 'cors'
 import {
   getProfile, saveProfile, getJobs, saveJobs, getDocuments, saveDocuments, deleteDocument,
   getActiveTrack, setActiveTrack, listTracks, profileReady,
-  getSearchSettings, saveSearchSettings, exportUserData, deleteUserData,
+  getSearchSettings, saveSearchSettings, exportUserData, importUserData, deleteUserData,
 } from './store.js'
 import { aiStatus, scoreJob, tailorDocument, interviewPrep, coachReply } from './ai.js'
 import { requireAuth } from './auth.js'
@@ -248,15 +248,22 @@ export function createApp() {
     for (const j of jobs) {
       for (const s of j.match_analysis?.missing_skills || []) {
         const key = s.trim()
-        if (key) counts[key] = (counts[key] || 0) + 1
+        if (!key) continue
+        const entry = counts[key] || { count: 0, blocking: 0, jobs: [] }
+        entry.count++
+        if ((j.match_score || 0) >= 70) entry.blocking++
+        if (entry.jobs.length < 5 && !entry.jobs.includes(j.title)) entry.jobs.push(j.title)
+        counts[key] = entry
       }
     }
-    const max = Math.max(1, ...Object.values(counts))
+    const max = Math.max(1, ...Object.values(counts).map((entry) => entry.count))
     const gaps = Object.entries(counts)
-      .map(([skill, count]) => ({
+      .map(([skill, entry]) => ({
         skill,
-        count,
-        demand: Math.round((count / max) * 100),
+        count: entry.count,
+        blocking: entry.blocking,
+        jobs: entry.jobs,
+        demand: Math.round((entry.count / max) * 100),
         userLevel: have.has(skill.toLowerCase()) ? 55 : 15,
         category: categorizeSkill(skill),
       }))
@@ -329,10 +336,17 @@ export function createApp() {
   // ─── AI Career Coach ─────────────────────────────────────────
   app.post('/api/coach', requireAuth, aiRateLimit, validate(schemas.coach), async (req, res) => {
     try {
-      const profile = await getProfile(req.userId)
-      const jobs = await getJobs(req.userId)
+      const [profile, jobs, documents] = await Promise.all([
+        getProfile(req.userId),
+        getJobs(req.userId),
+        getDocuments(req.userId),
+      ])
       const stats = computeStats(jobs)
-      const result = await coachReply(profile, req.body.messages || [], { stats, topJobs: stats.topMatches })
+      const result = await coachReply(profile, req.body.messages || [], {
+        stats,
+        topJobs: stats.topMatches,
+        documents,
+      })
       res.json({ ...result, ai: aiStatus() })
     } catch (e) {
       res.status(500).json({ error: String(e.message || e) })
@@ -422,6 +436,15 @@ export function createApp() {
       res.json(await exportUserData(req.userId))
     } catch (e) {
       res.status(500).json({ error: String(e.message || e) })
+    }
+  })
+  app.post('/api/import', requireAuth, async (req, res) => {
+    try {
+      const archive = req.body?.archive || req.body
+      const result = await importUserData(req.userId, archive, { replace: req.body?.replace === true })
+      res.json(result)
+    } catch (e) {
+      res.status(422).json({ error: String(e.message || 'Invalid JobPilot archive.') })
     }
   })
   app.delete('/api/data', requireAuth, async (req, res) => {

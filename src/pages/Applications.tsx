@@ -22,7 +22,6 @@ import {
   FileText,
   MessageSquare,
 } from 'lucide-react'
-import { mockApplications, mockJobs } from '@/data/mockData'
 import { getJobs, findCachedJob } from '@/lib/api'
 import type { Application, Job } from '@/types'
 import { format, formatDistanceToNow } from 'date-fns'
@@ -95,7 +94,7 @@ const sortOptions: { value: SortOption; label: string }[] = [
 // ─── Helpers ─────────────────────────────────
 
 function getJob(jobId: string) {
-  return findCachedJob(jobId) || mockJobs.find((j) => j.id === jobId)
+  return findCachedJob(jobId)
 }
 
 // Statuses that count as "applications" (past the unsaved 'new'/'skipped' stage)
@@ -392,7 +391,7 @@ function KanbanView({
   onSelectApp,
   statusCounts,
 }: {
-  apps: typeof mockApplications
+  apps: Application[]
   collapsedColumns: Set<string>
   toggleColumn: (id: string) => void
   expandAllColumns: () => void
@@ -476,7 +475,7 @@ function KanbanCard({
   index,
   onClick,
 }: {
-  app: (typeof mockApplications)[0]
+  app: Application
   index: number
   onClick: () => void
 }) {
@@ -600,7 +599,7 @@ function ListView({
   apps,
   onSelectApp,
 }: {
-  apps: typeof mockApplications
+  apps: Application[]
   onSelectApp: (id: string) => void
 }) {
   return (
@@ -673,7 +672,7 @@ function TableView({
   apps,
   onSelectApp,
 }: {
-  apps: typeof mockApplications
+  apps: Application[]
   onSelectApp: (id: string) => void
 }) {
   return (
@@ -748,8 +747,8 @@ function ApplicationDrawer({
   job,
   onClose,
 }: {
-  app: (typeof mockApplications)[0]
-  job: (typeof mockJobs)[0]
+  app: Application
+  job: Job
   onClose: () => void
 }) {
   const statusCol = getStatusColumn(app.status)

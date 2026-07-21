@@ -46,7 +46,7 @@ const FALLBACK: ConstructionData = {
   phone: '',
   website: '',
   location: '',
-  headline: 'Trades / site-work career track',
+  headline: '',
   summary: '',
   skills: {},
   experience: [],
@@ -187,7 +187,7 @@ export default function ConstructionProfile() {
           </p>
         )}
         <h2 className="font-heading text-heading-lg font-semibold text-text-primary mb-1">{data.full_name || 'Your name'}</h2>
-        <p className="text-body-md text-accent-amber font-medium mb-3">{data.headline}</p>
+        {data.headline && <p className="text-body-md text-accent-amber font-medium mb-3">{data.headline}</p>}
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-body-sm text-text-secondary">
           <span className="flex items-center gap-1.5"><MapPin size={14} className="text-text-muted" />{data.location}</span>
           <span className="flex items-center gap-1.5"><Phone size={14} className="text-text-muted" />{data.phone}</span>

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield,
   Database,
   Download,
+  Upload,
   Trash2,
   Brain,
   FileText,
@@ -18,17 +19,8 @@ import {
   Eye,
   Clock,
 } from 'lucide-react'
-import {
-  mockUserProfile,
-  mockJobs,
-  mockTailoredCVs,
-  mockProjects,
-  mockApplications,
-  mockNotifications,
-  mockSearchSettings,
-} from '@/data/mockData'
 import { useUIStore } from '@/store/uiStore'
-import { exportData, deleteAllData } from '@/lib/api'
+import { exportData, importData, deleteAllData } from '@/lib/api'
 
 // ─────────────────────────────────────────────
 // Animation config
@@ -75,176 +67,123 @@ interface DataSection {
   exportData: () => void
 }
 
-function createDataSections(): DataSection[] {
+type WorkspaceArchive = Record<string, any>
+
+function createDataSections(workspace: WorkspaceArchive | null): DataSection[] {
+  const tech = workspace?.profiles?.tech || {}
+  const construction = workspace?.profiles?.construction || {}
+  const jobs = Array.isArray(workspace?.jobs) ? workspace.jobs : []
+  const documents = Array.isArray(workspace?.documents) ? workspace.documents : []
+  const projects = Array.isArray(tech.projects) ? tech.projects : []
+  const applications = jobs.filter((job: Record<string, any>) => ['applied', 'interview', 'technical_test', 'offer', 'rejected'].includes(job.status))
+  const settings = workspace?.search_settings || {}
+  const field = (label: string, value: unknown, sensitive = false) => ({ label, value: String(value || '—'), sensitive })
+
   return [
     {
-      id: 'profile',
-      icon: Brain,
-      title: 'Profile Data',
-      description: 'Your career profile, skills, experience, education, and preferences.',
-      count: '1 profile, ~45 fields across 7 sections',
-      created: new Date(mockUserProfile.created_at).toLocaleDateString(),
-      usedIn: 'Job matching, CV generation, cover letters',
-      fields: [
-        { label: 'Full Name', value: mockUserProfile.full_name },
-        { label: 'Email', value: mockUserProfile.email },
-        { label: 'Phone', value: mockUserProfile.phone || '—' },
-        { label: 'Location', value: mockUserProfile.location || '—' },
-        { label: 'Headline', value: mockUserProfile.headline || '—' },
-        { label: 'Years Experience', value: String(mockUserProfile.years_experience || '—') },
-        { label: 'Preferred Role', value: mockUserProfile.preferred_role || '—' },
-        { label: 'Salary Range', value: `${mockUserProfile.salary_min || '—'} - ${mockUserProfile.salary_max || '—'} ${mockUserProfile.currency || ''}` },
-        { label: 'Summary', value: mockUserProfile.summary ? mockUserProfile.summary.substring(0, 80) + '...' : '—' },
-      ],
-      exportData: () => downloadJSON(mockUserProfile, 'profile-data.json'),
+      id: 'profile', icon: Brain, title: 'Career Profiles',
+      description: 'Your tech and construction profiles, skills, experience, education and preferences.',
+      count: [tech.full_name, construction.full_name].filter(Boolean).length ? `${[tech.full_name, construction.full_name].filter(Boolean).length} completed profile(s)` : 'No completed profiles',
+      created: 'Stored in your account', usedIn: 'AI Coach, matching, CVs, search',
+      fields: [field('Tech profile', tech.full_name), field('Construction profile', construction.full_name), field('Email', tech.email, true), field('Location', tech.location)],
+      exportData: () => downloadJSON(workspace?.profiles || {}, 'jobpilot-profiles.json'),
     },
     {
-      id: 'cv',
-      icon: FileText,
-      title: 'CV Data',
-      description: 'Your master CV and all tailored versions with cover letters.',
-      count: `1 master + ${mockTailoredCVs.length} tailored CVs + ${mockTailoredCVs.filter((cv) => cv.cover_letter).length} cover letters`,
-      created: 'January 2025',
-      usedIn: 'CV Manager, job applications, downloads',
-      fields: [
-        { label: 'Master CV', value: 'Full CV with all experience' },
-        ...mockTailoredCVs.map((cv) => ({
-          label: cv.version_name,
-          value: `${cv.selected_skills.length} skills selected`,
-        })),
-      ],
-      exportData: () => downloadJSON(mockTailoredCVs, 'cv-data.json'),
+      id: 'projects', icon: FolderOpen, title: 'Project Evidence',
+      description: 'Projects Gemini can use as evidence when matching and coaching.',
+      count: `${projects.length} project(s)`, created: 'From Career Profile', usedIn: 'AI Coach, job matching, CV tailoring',
+      fields: projects.slice(0, 8).map((project: Record<string, any>) => field(project.name || 'Project', (project.tech || []).join(', '))),
+      exportData: () => downloadJSON(projects, 'jobpilot-projects.json'),
     },
     {
-      id: 'projects',
-      icon: FolderOpen,
-      title: 'Project Data',
-      description: 'Your project library with descriptions, tech stacks, and highlights.',
-      count: `${mockProjects.length} projects`,
-      created: 'Ongoing',
-      usedIn: 'CV generation, job matching relevance',
-      fields: mockProjects.map((p) => ({
-        label: p.name,
-        value: `${p.technologies.slice(0, 3).join(', ')}${p.technologies.length > 3 ? '...' : ''}`,
-      })),
-      exportData: () => downloadJSON(mockProjects, 'projects-data.json'),
+      id: 'jobs', icon: Briefcase, title: 'Job Pipeline',
+      description: 'Jobs discovered, scored, saved and progressed in your account.',
+      count: `${jobs.length} job(s)`, created: 'Updated by JobPilot Search', usedIn: 'Dashboard, Applications, Reports, AI Coach',
+      fields: [field('Total jobs', jobs.length), field('Strong matches', jobs.filter((job: Record<string, any>) => Number(job.match_score) >= 70).length), field('Applications', applications.length)],
+      exportData: () => downloadJSON(jobs, 'jobpilot-jobs.json'),
     },
     {
-      id: 'jobs',
-      icon: Briefcase,
-      title: 'Job Data',
-      description: 'Jobs discovered, saved, scored, and tracked.',
-      count: `${mockJobs.length} jobs found`,
-      created: 'Ongoing',
-      usedIn: 'Jobs list, match scoring, applications',
-      fields: [
-        { label: 'Total Jobs', value: String(mockJobs.length) },
-        { label: 'Saved', value: String(mockJobs.filter((j) => j.status === 'saved').length) },
-        { label: 'Applied', value: String(mockJobs.filter((j) => j.status === 'applied').length) },
-        { label: 'Interview', value: String(mockJobs.filter((j) => j.status === 'interview').length) },
-        { label: 'Top Match', value: `${Math.max(...mockJobs.map((j) => j.match_score))}%` },
-        ...mockJobs.slice(0, 3).map((j) => ({
-          label: j.title,
-          value: `${j.company} (${j.match_score}%)`,
-        })),
-      ],
-      exportData: () => downloadJSON(mockJobs, 'jobs-data.json'),
+      id: 'documents', icon: FileText, title: 'Saved Documents',
+      description: 'Generated CVs and cover letters available to Gemini as workspace context.',
+      count: `${documents.length} document(s)`, created: 'Generated in CV Manager', usedIn: 'CV Manager, AI Coach, job assistant',
+      fields: documents.slice(0, 8).map((doc: Record<string, any>) => field(doc.job_title || (doc.type === 'cover_letter' ? 'Cover letter' : 'CV'), doc.company || doc.type)),
+      exportData: () => downloadJSON(documents, 'jobpilot-documents.json'),
     },
     {
-      id: 'applications',
-      icon: Briefcase,
-      title: 'Application Data',
-      description: 'Application tracking, interviews, and communications.',
-      count: `${mockApplications.length} applications tracked`,
-      created: 'January 2025',
-      usedIn: 'Applications pipeline, interview scheduling',
-      fields: mockApplications.map((app) => {
-        const job = mockJobs.find((j) => j.id === app.job_id)
-        return {
-          label: job?.title || app.job_id,
-          value: `${app.status}${app.interviews.length > 0 ? ` · ${app.interviews.length} interview(s)` : ''}`,
-        }
-      }),
-      exportData: () => downloadJSON(mockApplications, 'applications-data.json'),
+      id: 'applications', icon: Briefcase, title: 'Applications',
+      description: 'Application and interview stages derived from your real job pipeline.',
+      count: `${applications.length} application(s)`, created: 'Updated in Applications', usedIn: 'Applications, Dashboard, AI Coach',
+      fields: applications.slice(0, 8).map((job: Record<string, any>) => field(job.title || 'Role', `${job.company || 'Company'} · ${job.status}`)),
+      exportData: () => downloadJSON(applications, 'jobpilot-applications.json'),
     },
     {
-      id: 'notifications',
-      icon: Database,
-      title: 'Notification Data',
-      description: 'Your notification history and read status.',
-      count: `${mockNotifications.length} notifications`,
-      created: 'January 2025',
-      usedIn: 'Notification center',
-      fields: [
-        { label: 'Total', value: String(mockNotifications.length) },
-        { label: 'Unread', value: String(mockNotifications.filter((n) => !n.read).length) },
-        { label: 'Read', value: String(mockNotifications.filter((n) => n.read).length) },
-      ],
-      exportData: () => downloadJSON(mockNotifications, 'notifications-data.json'),
-    },
-    {
-      id: 'settings',
-      icon: Settings,
-      title: 'Settings Data',
-      description: 'Search settings, notification preferences, and app preferences.',
-      count: 'Search config + notification prefs + theme',
-      created: 'January 2025',
-      usedIn: 'Search agent, notification center, theme',
-      fields: [
-        { label: 'Search Active', value: mockSearchSettings.search_active ? 'Yes' : 'No' },
-        { label: 'Keywords', value: `${mockSearchSettings.keywords.length} keywords` },
-        { label: 'Sources', value: `${mockSearchSettings.sources.length} sources` },
-        { label: 'Frequency', value: mockSearchSettings.frequency },
-        { label: 'Locations', value: mockSearchSettings.preferred_locations.join(', ') },
-      ],
-      exportData: () => downloadJSON(mockSearchSettings, 'settings-data.json'),
+      id: 'settings', icon: Settings, title: 'Search Automation',
+      description: 'Account-scoped automation, alert and search preferences.',
+      count: settings.enabled ? 'Automation enabled' : 'Automation disabled', created: 'Stored in your account', usedIn: 'Search Settings, scheduled discovery',
+      fields: [field('Query', settings.query), field('Location', settings.location), field('Frequency', settings.frequency), field('Minimum alert score', settings.min_score_alert)],
+      exportData: () => downloadJSON(settings, 'jobpilot-search-settings.json'),
     },
   ]
 }
 
-// ─────────────────────────────────────────────
-// Main Component
-// ─────────────────────────────────────────────
-
 export default function PrivacyData() {
   const addToast = useUIStore((s) => s.addToast)
-  const [dataSections] = useState<DataSection[]>(createDataSections())
+  const [workspace, setWorkspace] = useState<WorkspaceArchive | null>(null)
+  const dataSections = useMemo(() => createDataSections(workspace), [workspace])
   const [expandedSection, setExpandedSection] = useState<string | null>('profile')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [exportLoading, setExportLoading] = useState(false)
+  const [importLoading, setImportLoading] = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
   const [deleteAllText, setDeleteAllText] = useState('')
+
+  useEffect(() => {
+    exportData().then((data) => { if (data) setWorkspace(data) }).catch(() => {})
+  }, [])
+
+  const recordCount = (workspace?.jobs?.length || 0) + (workspace?.documents?.length || 0) + (workspace?.profiles?.tech?.projects?.length || 0)
+  const dataSize = workspace ? `${Math.max(1, Math.round(JSON.stringify(workspace).length / 1024))} KB` : 'Loading…'
 
   const toggleSection = (id: string) => {
     setExpandedSection((prev) => (prev === id ? null : id))
   }
 
-  // Export the REAL account data from the backend; fall back to the local
-  // demo dataset only when the backend is unreachable.
+  // Export only the authenticated account's real backend data.
   const handleExportAll = async () => {
     setExportLoading(true)
     const real = await exportData()
-    const allData =
-      real ?? {
-        note: 'Backend unreachable — this export contains local demo data only.',
-        profile: mockUserProfile,
-        jobs: mockJobs,
-        cvs: mockTailoredCVs,
-        projects: mockProjects,
-        applications: mockApplications,
-        notifications: mockNotifications,
-        settings: mockSearchSettings,
-        exported_at: new Date().toISOString(),
-      }
-    downloadJSON(allData, 'jobpilot-data-export.json')
+    if (real) downloadJSON(real, 'jobpilot-data-export.json')
     setExportLoading(false)
     addToast({
-      type: real ? 'success' : 'warning',
-      title: real ? 'Your data has been exported' : 'Exported demo data',
-      message: real ? 'Everything stored for your account, as JSON.' : 'Start the backend to export your real account data.',
+      type: real ? 'success' : 'error',
+      title: real ? 'Your data has been exported' : 'Export failed',
+      message: real ? 'Everything stored for your account, as JSON.' : 'Your account data could not be loaded. Please try again.',
     })
+  }
+
+  const handleImportArchive = async (file: File | undefined) => {
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      addToast({ type: 'error', title: 'Archive is too large', message: 'JobPilot JSON archives must be under 2 MB.' })
+      return
+    }
+    setImportLoading(true)
+    try {
+      const parsed = JSON.parse(await file.text()) as Record<string, unknown>
+      const result = await importData(parsed, false)
+      addToast({
+        type: 'success',
+        title: 'Workspace restored',
+        message: `${result.profiles} profiles, ${result.jobs} jobs and ${result.documents} documents are now available.`,
+      })
+      window.setTimeout(() => window.location.reload(), 900)
+    } catch (error) {
+      addToast({ type: 'error', title: 'Could not restore archive', message: error instanceof Error ? error.message : 'Invalid JobPilot archive.' })
+    } finally {
+      setImportLoading(false)
+    }
   }
 
   // Clear local app data (keeps the mock user registry so login still works).
@@ -349,6 +288,29 @@ export default function PrivacyData() {
             </button>
           </div>
 
+          {/* Restore Backup */}
+          <div className="flex items-center justify-between p-4 rounded-card bg-bg-tertiary border border-border-subtle flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <Upload size={18} className="text-accent-indigo flex-shrink-0" />
+              <div>
+                <p className="text-body-sm font-medium text-text-primary">Restore JobPilot Backup</p>
+                <p className="text-body-xs text-text-muted">Merges a JobPilot JSON archive into this signed-in account only.</p>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:text-text-primary hover:bg-bg-secondary hover:border-border-focus transition-all cursor-pointer">
+              {importLoading ? <RefreshCw size={14} className="animate-spin-slow" /> : <Upload size={14} />}
+              {importLoading ? 'Restoring...' : 'Choose Backup'}
+              <input
+                type="file"
+                accept="application/json,.json"
+                disabled={importLoading}
+                className="sr-only"
+                aria-label="Choose JobPilot backup"
+                onChange={(event) => handleImportArchive(event.target.files?.[0])}
+              />
+            </label>
+          </div>
+
           {/* Delete All Data */}
           <div className="flex items-center justify-between p-4 rounded-card bg-accent-rose-muted/30 border border-accent-rose/20 flex-wrap gap-3">
             <div className="flex items-center gap-3">
@@ -415,9 +377,9 @@ export default function PrivacyData() {
       {/* ── Data Overview Stats ── */}
       <motion.div variants={staggerItem} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Data', value: '~2.4 MB', icon: Database, color: 'text-accent-indigo' },
-          { label: 'Records', value: `${mockJobs.length + mockApplications.length + mockProjects.length + mockTailoredCVs.length} records`, icon: Briefcase, color: 'text-accent-cyan' },
-          { label: 'Account Created', value: 'Jan 2025', icon: Clock, color: 'text-accent-emerald' },
+          { label: 'Total Data', value: dataSize, icon: Database, color: 'text-accent-indigo' },
+          { label: 'Records', value: `${recordCount} records`, icon: Briefcase, color: 'text-accent-cyan' },
+          { label: 'Workspace', value: workspace ? 'Connected' : 'Loading', icon: Clock, color: 'text-accent-emerald' },
           { label: 'Last Export', value: 'Never', icon: Download, color: 'text-accent-violet' },
         ].map((stat) => (
           <div key={stat.label} className="p-4 rounded-card bg-bg-secondary border border-border-subtle">

@@ -10,7 +10,7 @@ import {
   FileText, BookOpenCheck,
   CheckCircle2, XCircle, Save
 } from 'lucide-react'
-import { mockUserProfile, mockProjects } from '@/data/mockData'
+import { getProfile, saveProfile } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────
 type SectionId = 'personal' | 'education' | 'skills' | 'experience' | 'projects' | 'preferences' | 'goals' | 'answers'
@@ -128,134 +128,123 @@ const skillSchema = z.object({
 })
 
 // ─── Initial Data ─────────────────────────────
-const initialData: ProfileData = {
-  personal: {
-    fullName: mockUserProfile.full_name,
-    email: mockUserProfile.email,
-    phone: mockUserProfile.phone || '',
-    location: mockUserProfile.location || '',
-    rightToWork: 'UK Graduate Visa',
-    linkedin: mockUserProfile.linkedin_url || '',
-    github: mockUserProfile.github_url || '',
-    portfolio: mockUserProfile.website || '',
-    summary: mockUserProfile.summary || '',
-  },
-  education: [
-    {
-      id: 'edu-001',
-      institution: 'Example University',
-      degree: 'BSc',
-      field: 'Computer Science',
-      startDate: '2021-09',
-      endDate: '2024-06',
-      current: false,
-      grade: '',
-      modules: ['Software Development', 'Algorithms', 'Cybersecurity', 'AI', 'Networking'],
+const EMPTY_SKILL_CATEGORIES = [
+  'Languages & Frameworks',
+  'Databases',
+  'APIs & Cloud',
+  'Deployment & Tools',
+  'Development Concepts',
+  'Debugging & Testing',
+]
+
+function blankProfileData(): ProfileData {
+  return {
+    personal: { fullName: '', email: '', phone: '', location: '', rightToWork: '', linkedin: '', github: '', portfolio: '', summary: '' },
+    education: [],
+    skills: EMPTY_SKILL_CATEGORIES.map((category) => ({ category, skills: [] })),
+    experience: [],
+    projects: [],
+    preferences: {
+      titles: [], industries: [], locations: [], salaryMin: '', salaryMax: '',
+      workArrangement: [], seniority: [], jobTypes: [], rolesToAvoid: [],
     },
-    {
-      id: 'edu-002',
-      institution: 'Example College',
-      degree: 'Access to HE Diploma',
-      field: 'Electronics & Software Engineering',
-      startDate: '2020-09',
-      endDate: '2021-06',
-      current: false,
-      grade: 'Distinctions',
-      modules: ['Programming', 'Project Management', 'Web Design'],
+    goals: { careerGoal: '', skillsToLearn: [] },
+    answers: [
+      'Why are you applying for this role?',
+      'What are your strengths?',
+      'Where do you see yourself in 5 years?',
+      'Why should we hire you?',
+    ].map((question) => ({ question, answer: '' })),
+  }
+}
+
+type BackendProfile = Record<string, any>
+
+function backendToProfile(raw: BackendProfile): ProfileData {
+  const empty = blankProfileData()
+  const skills = Object.entries(raw.skills || {}).map(([category, values]) => ({
+    category,
+    skills: (Array.isArray(values) ? values : []).map((value) => ({
+      name: String(value),
+      level: /learning|studying|beginner/i.test(String(value)) ? 'Beginner' : 'Intermediate',
+    })),
+  }))
+  const preferences = raw.preferences || {}
+  const additional = raw.additional || {}
+  return {
+    personal: {
+      fullName: String(raw.full_name || ''),
+      email: String(raw.email || ''),
+      phone: String(raw.phone || ''),
+      location: String(raw.location || ''),
+      rightToWork: String(additional.right_to_work || ''),
+      linkedin: String(raw.linkedin || ''),
+      github: String(raw.github || ''),
+      portfolio: String(raw.website || ''),
+      summary: String(raw.summary || ''),
     },
-  ],
-  skills: [
-    {
-      category: 'Languages & Frameworks',
-      skills: [
-        { name: 'Java', level: 'Advanced' },
-        { name: 'Spring Boot', level: 'Advanced' },
-        { name: 'React.js', level: 'Advanced' },
-        { name: 'JavaScript', level: 'Advanced' },
-        { name: 'SQL', level: 'Intermediate' },
-        { name: 'C#', level: 'Beginner' },
-        { name: 'ASP.NET', level: 'Beginner' },
-      ],
+    education: (raw.education || []).map((entry: BackendProfile, index: number) => ({
+      id: String(entry.id || `edu-${index}`), institution: String(entry.institution || ''), degree: String(entry.degree || ''),
+      field: String(entry.field || ''), startDate: String(entry.start_date || entry.dates || ''), endDate: String(entry.end_date || ''),
+      current: !!entry.current, grade: String(entry.grade || ''), modules: Array.isArray(entry.modules) ? entry.modules : [],
+    })),
+    skills: skills.length ? skills : empty.skills,
+    experience: (raw.experience || []).map((entry: BackendProfile, index: number) => ({
+      id: String(entry.id || `exp-${index}`), company: String(entry.company || ''), role: String(entry.role || ''),
+      startDate: String(entry.start_date || entry.dates || ''), endDate: String(entry.end_date || ''), current: !!entry.current,
+      description: String(entry.detail || entry.description || ''), technologies: Array.isArray(entry.tech) ? entry.tech : [], isTech: entry.is_tech !== false,
+    })),
+    projects: (raw.projects || []).map((entry: BackendProfile, index: number) => ({
+      id: String(entry.id || `project-${index}`), name: String(entry.name || ''), description: String(entry.detail || entry.description || ''),
+      url: String(entry.url || entry.live_url || entry.github_url || ''), technologies: Array.isArray(entry.tech) ? entry.tech : [],
+    })),
+    preferences: {
+      titles: preferences.titles || [], industries: preferences.industries || [], locations: preferences.locations || [],
+      salaryMin: preferences.salary_min ? String(preferences.salary_min) : '', salaryMax: preferences.salary_max ? String(preferences.salary_max) : '',
+      workArrangement: preferences.work_styles || preferences.work_arrangement || [], seniority: preferences.seniority || [],
+      jobTypes: preferences.job_types || [], rolesToAvoid: preferences.avoid || [],
     },
-    {
-      category: 'Databases',
-      skills: [
-        { name: 'MySQL', level: 'Intermediate' },
-        { name: 'PostgreSQL', level: 'Intermediate' },
-        { name: 'SQL Server', level: 'Intermediate' },
-      ],
+    goals: { careerGoal: String(raw.goals || ''), skillsToLearn: raw.skills_to_learn || [] },
+    answers: Array.isArray(raw.application_answers) && raw.application_answers.length ? raw.application_answers : empty.answers,
+  }
+}
+
+function profileToBackend(profile: ProfileData, existing: BackendProfile): BackendProfile {
+  return {
+    ...existing,
+    full_name: profile.personal.fullName,
+    email: profile.personal.email,
+    phone: profile.personal.phone,
+    location: profile.personal.location,
+    linkedin: profile.personal.linkedin,
+    github: profile.personal.github,
+    website: profile.personal.portfolio,
+    summary: profile.personal.summary,
+    education: profile.education.map((entry) => ({
+      id: entry.id, institution: entry.institution, degree: entry.degree, field: entry.field,
+      start_date: entry.startDate, end_date: entry.endDate, current: entry.current, grade: entry.grade, modules: entry.modules,
+      dates: [entry.startDate, entry.current ? 'Present' : entry.endDate].filter(Boolean).join(' – '),
+    })),
+    experience: profile.experience.map((entry) => ({
+      id: entry.id, company: entry.company, role: entry.role, start_date: entry.startDate, end_date: entry.endDate,
+      current: entry.current, detail: entry.description, tech: entry.technologies, is_tech: entry.isTech,
+      dates: [entry.startDate, entry.current ? 'Present' : entry.endDate].filter(Boolean).join(' – '),
+    })),
+    skills: Object.fromEntries(profile.skills.map((group) => [group.category, group.skills.map((skill) => skill.name)])),
+    projects: profile.projects.map((entry) => ({ id: entry.id, name: entry.name, detail: entry.description, url: entry.url, tech: entry.technologies })),
+    preferences: {
+      ...(existing.preferences || {}), titles: profile.preferences.titles, industries: profile.preferences.industries,
+      locations: profile.preferences.locations, salary_min: Number(profile.preferences.salaryMin) || 0,
+      salary_max: Number(profile.preferences.salaryMax) || 0, currency: existing.preferences?.currency || 'GBP',
+      work_styles: profile.preferences.workArrangement, seniority: profile.preferences.seniority,
+      job_types: profile.preferences.jobTypes, avoid: profile.preferences.rolesToAvoid,
     },
-    {
-      category: 'APIs & Cloud',
-      skills: [
-        { name: 'REST APIs', level: 'Advanced' },
-        { name: 'Twilio (SMS & Voice)', level: 'Intermediate' },
-        { name: 'Azure DevOps', level: 'Beginner' },
-      ],
-    },
-    {
-      category: 'Deployment & Tools',
-      skills: [
-        { name: 'Git', level: 'Advanced' },
-        { name: 'GitHub', level: 'Advanced' },
-        { name: 'Docker', level: 'Intermediate' },
-        { name: 'Render', level: 'Intermediate' },
-        { name: 'Vercel', level: 'Intermediate' },
-        { name: 'Netlify', level: 'Intermediate' },
-        { name: 'CI/CD', level: 'Beginner' },
-      ],
-    },
-    {
-      category: 'Development Concepts',
-      skills: [
-        { name: 'OOP', level: 'Advanced' },
-        { name: 'MVC', level: 'Intermediate' },
-        { name: 'Agile/Scrum', level: 'Intermediate' },
-        { name: 'Microservices', level: 'Intermediate' },
-        { name: 'Authentication', level: 'Intermediate' },
-        { name: 'Version control', level: 'Advanced' },
-      ],
-    },
-    {
-      category: 'Debugging & Testing',
-      skills: [
-        { name: 'IntelliJ', level: 'Advanced' },
-        { name: 'VS Code', level: 'Advanced' },
-        { name: 'Postman', level: 'Intermediate' },
-        { name: 'SonarCloud', level: 'Beginner' },
-        { name: 'API testing', level: 'Intermediate' },
-      ],
-    },
-  ],
-  experience: [],
-  projects: mockProjects.map(p => ({
-    id: p.id,
-    name: p.name,
-    description: p.short_description || p.description,
-    url: p.live_url || p.github_url || '',
-    technologies: p.technologies,
-  })),
-  preferences: {
-    titles: ['Junior Software Developer', 'Graduate Developer', 'Full Stack Developer', 'Backend Developer', 'Java Developer', 'React Developer'],
-    industries: ['Technology', 'Public Sector', 'Finance'],
-    locations: ['London', 'Remote', 'Hybrid'],
-    salaryMin: '22000',
-    salaryMax: '35000',
-    workArrangement: ['Hybrid', 'Remote'],
-    seniority: ['Entry-level', 'Graduate', 'Junior'],
-    jobTypes: ['Full-time', 'Graduate Scheme'],
-    rolesToAvoid: ['Senior', 'Lead', 'Principal', 'Manager', '5+ years experience'],
-  },
-  goals: {
-    careerGoal: 'I aim to secure a junior software developer role where I can apply my full-stack Java and React skills, while advancing into C# and ASP.NET to broaden my backend expertise and grow into a well-rounded full-stack developer.',
-    skillsToLearn: ['C#', 'ASP.NET', 'Azure DevOps', 'CI/CD', 'Cloud'],
-  },
-  answers: [
-    { question: 'Why are you applying for this role?', answer: 'I am excited about the opportunity to contribute my Java and Spring Boot skills while continuing to grow as a developer. Your company\'s focus on innovation aligns with my passion for building impactful software.' },
-    { question: 'What are your strengths?', answer: 'My key strengths include strong problem-solving abilities, a solid foundation in Java and Spring Boot, and the ability to quickly learn new technologies. I work well in collaborative team environments.' },
-    { question: 'Where do you see yourself in 5 years?', answer: 'In 5 years, I see myself as a senior full-stack developer leading projects and mentoring junior developers. I want to deepen my expertise in cloud technologies and system design.' },
-    { question: 'Why should we hire you?', answer: 'I bring a strong academic foundation, hands-on project experience with modern tech stacks, and genuine enthusiasm for software development. I am eager to learn and committed to delivering quality work.' },
-  ],
+    goals: profile.goals.careerGoal,
+    skills_to_learn: profile.goals.skillsToLearn,
+    application_answers: profile.answers,
+    additional: { ...(existing.additional || {}), right_to_work: profile.personal.rightToWork },
+    track: 'tech',
+  }
 }
 
 // ─── Animation Constants ──────────────────────
@@ -465,7 +454,9 @@ function SectionHeader({ title, icon: Icon, onAdd, onEdit, onDelete, onExport, o
 
 // ─── Main Component ───────────────────────────
 export default function CareerProfile() {
-  const [profile, setProfile] = useState<ProfileData>(initialData)
+  const [profile, setProfile] = useState<ProfileData>(() => blankProfileData())
+  const rawProfileRef = useRef<BackendProfile>({})
+  const [profileLoaded, setProfileLoaded] = useState(false)
   const [activeTab, setActiveTab] = useState<SectionId>('personal')
   const [editingSection, setEditingSection] = useState<SectionId | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void; destructive?: boolean }>({ open: false, title: '', message: '', onConfirm: () => {} })
@@ -565,9 +556,9 @@ export default function CareerProfile() {
           switch (section) {
             case 'education': next.education = []; break
             case 'experience': next.experience = []; break
-            case 'skills': next.skills = initialData.skills.map(g => ({ ...g, skills: [] })); break
+            case 'skills': next.skills = blankProfileData().skills; break
             case 'projects': next.projects = []; break
-            case 'preferences': next.preferences = initialData.preferences; break
+            case 'preferences': next.preferences = blankProfileData().preferences; break
             case 'goals': next.goals = { careerGoal: '', skillsToLearn: [] }; break
             case 'answers': next.answers = prev.answers.map(a => ({ ...a, answer: '' })); break
             case 'personal':
@@ -623,7 +614,32 @@ export default function CareerProfile() {
   const personalForm = useForm({ resolver: zodResolver(personalSchema), defaultValues: profile.personal })
   const eduForm = useForm({ resolver: zodResolver(educationSchema), defaultValues: { institution: '', degree: '', field: '', startDate: '', endDate: '', current: false, grade: '', modules: '' } })
   const expForm = useForm({ resolver: zodResolver(experienceSchema), defaultValues: { company: '', role: '', startDate: '', endDate: '', current: false, description: '', technologies: '', isTech: true } })
-  const skillForm = useForm({ resolver: zodResolver(skillSchema), defaultValues: { skillInput: '', category: 'Programming Languages', level: 'Intermediate' } })
+  const skillForm = useForm({ resolver: zodResolver(skillSchema), defaultValues: { skillInput: '', category: 'Languages & Frameworks', level: 'Intermediate' } })
+
+  useEffect(() => {
+    let alive = true
+    getProfile('tech').then((stored) => {
+      if (!alive || !stored) return
+      const raw = stored as BackendProfile
+      const mapped = backendToProfile(raw)
+      rawProfileRef.current = raw
+      setProfile(mapped)
+      personalForm.reset(mapped.personal)
+      setProfileLoaded(true)
+    })
+    return () => { alive = false }
+  }, [personalForm])
+
+  // Persist every edit to the authenticated account after a short debounce.
+  useEffect(() => {
+    if (!profileLoaded) return
+    const timer = window.setTimeout(async () => {
+      const payload = profileToBackend(profile, rawProfileRef.current)
+      const saved = await saveProfile(payload, 'tech')
+      if (saved) rawProfileRef.current = saved as BackendProfile
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [profile, profileLoaded])
 
   const onSavePersonal = personalForm.handleSubmit((data) => {
     setProfile(prev => ({ ...prev, personal: data as ProfileData['personal'] }))
@@ -653,7 +669,11 @@ export default function CareerProfile() {
 
   const onAddSkill = skillForm.handleSubmit((data) => {
     setProfile(prev => {
-      const next = { ...prev, skills: prev.skills.map(g => g.category === data.category ? { ...g, skills: [...g.skills, { name: data.skillInput, level: data.level }] } : g) }
+      const exists = prev.skills.some((g) => g.category === data.category)
+      const skills = exists
+        ? prev.skills.map(g => g.category === data.category ? { ...g, skills: [...g.skills, { name: data.skillInput, level: data.level }] } : g)
+        : [...prev.skills, { category: data.category, skills: [{ name: data.skillInput, level: data.level }] }]
+      const next = { ...prev, skills }
       return next
     })
     skillForm.reset({ skillInput: '', category: data.category, level: 'Intermediate' })
@@ -672,21 +692,21 @@ export default function CareerProfile() {
           {/* Avatar */}
           <div className="relative group flex-shrink-0">
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-accent-indigo to-accent-violet flex items-center justify-center text-white text-2xl font-bold border-[3px] border-accent-indigo">
-              {profile.personal.fullName.split(' ').map(n => n[0]).join('')}
+              {profile.personal.fullName ? profile.personal.fullName.split(' ').map(n => n[0]).join('') : '?'}
             </div>
           </div>
           {/* Info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="font-heading text-2xl md:text-[28px] font-semibold text-text-primary">{profile.personal.fullName}</h1>
+              <h1 className="font-heading text-2xl md:text-[28px] font-semibold text-text-primary">{profile.personal.fullName || 'Build your career profile'}</h1>
               <button onClick={() => setEditingSection('personal')} className="p-1.5 rounded-lg text-text-muted hover:text-accent-indigo hover:bg-accent-indigo-muted transition-colors">
                 <Pencil size={15} />
               </button>
             </div>
             <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-sm text-text-secondary">
               <span className="flex items-center gap-1.5"><MapPin size={14} className="text-text-muted" />{profile.personal.location || 'Not set'}</span>
-              <span className="flex items-center gap-1.5"><GraduationCap size={14} className="text-text-muted" />Computer Science, Example University</span>
-              <span className="flex items-center gap-1.5"><Briefcase size={14} className="text-accent-indigo" />Seeking: Junior Software Developer</span>
+              <span className="flex items-center gap-1.5"><GraduationCap size={14} className="text-text-muted" />{profile.education[0] ? `${profile.education[0].degree}, ${profile.education[0].institution}` : 'Education not added'}</span>
+              <span className="flex items-center gap-1.5"><Briefcase size={14} className="text-accent-indigo" />Seeking: {profile.preferences.titles[0] || 'Target role not added'}</span>
             </div>
             {/* Quick Actions */}
             <div className="flex flex-wrap gap-2 mt-4">
@@ -1054,7 +1074,7 @@ export default function CareerProfile() {
           title="Job Preferences" icon={Target}
           onAdd={() => setEditingSection('preferences')}
           onEdit={() => setEditingSection('preferences')}
-          onDelete={() => setConfirmDialog({ open: true, title: 'Delete Preferences', message: 'Reset all preferences?', onConfirm: () => { setProfile(p => ({ ...p, preferences: initialData.preferences })); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
+          onDelete={() => setConfirmDialog({ open: true, title: 'Delete Preferences', message: 'Reset all preferences?', onConfirm: () => { setProfile(p => ({ ...p, preferences: blankProfileData().preferences })); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
           onExport={() => handleExport('preferences')}
           onClear={() => handleClear('preferences')}
         />
@@ -1279,7 +1299,7 @@ export default function CareerProfile() {
           <Upload size={14} /> Import Profile Data
         </button>
         <button
-          onClick={() => setConfirmDialog({ open: true, title: 'Delete All Profile Data', message: 'This will permanently delete ALL your profile data. This cannot be undone.', onConfirm: () => { setProfile(initialData); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
+          onClick={() => setConfirmDialog({ open: true, title: 'Delete All Profile Data', message: 'This will permanently delete ALL your profile data. This cannot be undone.', onConfirm: () => { setProfile(blankProfileData()); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
           className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-accent-rose text-white hover:bg-rose-500 transition-colors"
         >
           <Trash2 size={14} /> Delete All Data

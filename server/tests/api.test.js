@@ -20,6 +20,7 @@ delete process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const { createApp } = await import('../app.js')
 const { assertProductionConfig } = await import('../config.js')
+const { buildCoachSystem } = await import('../ai.js')
 const app = createApp()
 
 // Local-mode mock tokens (base64 {id,email}) — one per fake account.
@@ -106,6 +107,24 @@ describe('AI guards', () => {
     expect(res.status).toBe(422)
     expect(res.body.code).toBe('PROFILE_INCOMPLETE')
   })
+
+  it('grounds the coach in JobPilot data and keeps actions in-product', () => {
+    const prompt = buildCoachSystem(
+      { full_name: 'Alice', projects: [{ name: 'Real Project', tech: ['Java'], detail: 'Built an API' }], skills: { Core: ['Java'] } },
+      { stats: { totalJobs: 2 }, topJobs: [], documents: [{ type: 'cv', job_title: 'QA Engineer', content: 'REAL SAVED CV EVIDENCE' }] },
+    )
+    expect(prompt).toContain('Real Project')
+    expect(prompt).toContain('REAL SAVED CV EVIDENCE')
+    expect(prompt).toContain('JOBPILOT-FIRST RULES')
+    expect(prompt).toMatch(/Do not tell the user to browse LinkedIn/)
+    expect(prompt).toContain('Career Profile, Project Library, Jobs, Applications, CV Manager')
+  })
+
+  it('does not pretend a blank profile is personalised', () => {
+    const prompt = buildCoachSystem({ full_name: '', skills: {}, projects: [] }, { stats: {}, documents: [] })
+    expect(prompt).toContain('PROFILE NOT COMPLETED')
+    expect(prompt).toContain('ask one focused question at a time')
+  })
 })
 
 describe('documents', () => {
@@ -169,6 +188,35 @@ describe('data export & deletion', () => {
     expect(res.status).toBe(200)
     expect(res.body.profiles.tech.full_name).toBe('Alice Test')
     expect(Array.isArray(res.body.jobs)).toBe(true)
+    expect(res.body).toMatchObject({ format: 'jobpilot-workspace', version: 1 })
+  })
+
+  it('imports a workspace only into the authenticated account', async () => {
+    const archive = {
+      format: 'jobpilot-workspace', version: 1, active_track: 'construction',
+      profiles: {
+        tech: { full_name: 'Bob Tech', skills: { Core: ['React'] } },
+        construction: { full_name: 'Bob Site', skills: { Site: ['Banksman'] } },
+      },
+      jobs: [{ id: 'imported-job', title: 'Imported Role', company: 'Acme', status: 'saved' }],
+      documents: [{ id: 'imported-doc', type: 'cv', content: 'Imported CV', created_at: new Date().toISOString() }],
+      search_settings: { enabled: false, query: 'imported query' },
+    }
+    const imported = await request(app).post('/api/import').set('Authorization', USER_B).send({ archive })
+    expect(imported.status).toBe(200)
+    expect(imported.body).toMatchObject({ ok: true, profiles: 2, jobs: 1, documents: 1, active_track: 'construction' })
+
+    const bProfile = await request(app).get('/api/profile?track=tech').set('Authorization', USER_B)
+    expect(bProfile.body.full_name).toBe('Bob Tech')
+    const bJobs = await request(app).get('/api/jobs').set('Authorization', USER_B)
+    expect(bJobs.body[0]).toMatchObject({ id: 'imported-job', user_id: 'mock-user-b' })
+    const aProfile = await request(app).get('/api/profile').set('Authorization', USER_A)
+    expect(aProfile.body.full_name).toBe('Alice Test')
+  })
+
+  it('rejects a malformed workspace archive', async () => {
+    const res = await request(app).post('/api/import').set('Authorization', USER_B).send({ archive: [] })
+    expect(res.status).toBe(422)
   })
 
   it('deletes only the current user data', async () => {

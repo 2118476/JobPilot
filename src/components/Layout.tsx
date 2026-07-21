@@ -15,7 +15,7 @@ export function Layout() {
 
   // New-user gate: if the signed-in user's profile is blank (fresh account),
   // send them to onboarding so the AI has THEIR details to work with.
-  // The owner (and local single-user mode) always has a filled profile.
+  // Existing accounts can restore their own workspace after signing in.
   useEffect(() => {
     if (onboardingChecked.current) return
     onboardingChecked.current = true

@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/authStore'
 import { ErrorDisplay } from '@/components/ErrorDisplay'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 // ─── Particle Field Hero ─────────────────────
 
@@ -215,7 +216,9 @@ export default function Login() {
   const [shakeForm, setShakeForm] = useState(false)
   const [resetEmail, setResetEmail] = useState('')
   const [resetSent, setResetSent] = useState(false)
-  const [showDemoHint, setShowDemoHint] = useState(true)
+  // Demo credentials belong only to the explicitly enabled local mock-auth
+  // build. A real production login must look and behave like a clean product.
+  const [showDemoHint, setShowDemoHint] = useState(!isSupabaseConfigured)
 
   // Redirect if authenticated
   useEffect(() => {

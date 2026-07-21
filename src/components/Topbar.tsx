@@ -14,7 +14,6 @@ import { useUIStore } from '@/store/uiStore'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/authStore'
 import { TrackSwitcher } from '@/components/TrackSwitcher'
-import { mockNotifications, mockUserProfile } from '@/data/mockData'
 
 const pageTitleMap: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -40,7 +39,7 @@ export function Topbar() {
   const { notificationBadge, setSearchOpen } = useUIStore()
   const { logout } = useAuth()
   const authUser = useAuthStore((s) => s.user)
-  const displayName = authUser?.user_metadata?.full_name || authUser?.email?.split('@')[0] || mockUserProfile.full_name
+  const displayName = authUser?.user_metadata?.full_name || authUser?.email?.split('@')[0] || 'User'
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
@@ -81,7 +80,7 @@ export function Topbar() {
     await logout()
   }
 
-  const unreadNotifications = mockNotifications.filter((n) => !n.read).slice(0, 5)
+  const unreadNotifications: { id: string; title: string; message: string; action_url?: string }[] = []
 
   return (
     <header className="fixed top-0 right-0 left-0 lg:left-sidebar h-topbar bg-bg-primary/80 backdrop-blur-xl border-b border-border-subtle z-40 flex items-center justify-between px-4 lg:px-6 transition-all duration-300">

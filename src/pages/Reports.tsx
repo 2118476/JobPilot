@@ -18,7 +18,6 @@ import {
   ArrowUpRight,
   Zap,
 } from 'lucide-react'
-import { mockJobs } from '@/data/mockData'
 import { getJobs } from '@/lib/api'
 import type { Job } from '@/types'
 import {
@@ -68,68 +67,6 @@ const SCORE_COLORS = [
   { range: 'Skip (<40)', min: 0, max: 39, color: '#64748B', count: 0 },
 ]
 
-const WEEKLY_DATA = [
-  { day: 'Mon', jobs: 8, strong: 3 },
-  { day: 'Tue', jobs: 5, strong: 1 },
-  { day: 'Wed', jobs: 12, strong: 4 },
-  { day: 'Thu', jobs: 6, strong: 2 },
-  { day: 'Fri', jobs: 7, strong: 2 },
-  { day: 'Sat', jobs: 3, strong: 1 },
-  { day: 'Sun', jobs: 2, strong: 0 },
-]
-
-const SOURCE_DATA = [
-  { source: 'LinkedIn', total: 15, strong: 4 },
-  { source: 'Reed', total: 12, strong: 2 },
-  { source: 'Adzuna', total: 8, strong: 1 },
-  { source: 'Civil Service', total: 5, strong: 1 },
-  { source: 'Indeed', total: 3, strong: 0 },
-]
-
-const FUNNEL_DATA = [
-  { stage: 'Found', count: 43, color: '#22D3EE' },
-  { stage: 'Saved', count: 12, color: '#A78BFA', pct: '28%' },
-  { stage: 'Applied', count: 5, color: '#34D399', pct: '42%' },
-  { stage: 'Interview', count: 2, color: '#FB923C', pct: '40%' },
-  { stage: 'Offer', count: 0, color: '#34D399', pct: '0%' },
-]
-
-const MISSING_SKILLS = [
-  { skill: 'AWS', mentions: 18, strongMatchJobs: 5 },
-  { skill: 'Docker', mentions: 12, strongMatchJobs: 3 },
-  { skill: 'TypeScript', mentions: 10, strongMatchJobs: 2 },
-  { skill: 'Azure', mentions: 10, strongMatchJobs: 2 },
-  { skill: 'C#', mentions: 8, strongMatchJobs: 1 },
-  { skill: 'Kubernetes', mentions: 8, strongMatchJobs: 1 },
-]
-
-const RECOMMENDED_ACTIONS = [
-  {
-    priority: 'High' as const,
-    title: 'Apply to 2 more strong matches',
-    description: 'You have 5 strong matches you haven\'t applied to yet. 2 close this week.',
-    action: 'View Strong Matches',
-  },
-  {
-    priority: 'High' as const,
-    title: 'Learn AWS basics',
-    description: 'AWS blocked 5 strong matches this week. Free tier available.',
-    action: 'View Skill Gap',
-  },
-  {
-    priority: 'Medium' as const,
-    title: 'Update your Career Profile',
-    description: 'Add any new skills or experience from this week.',
-    action: 'Go to Profile',
-  },
-  {
-    priority: 'Medium' as const,
-    title: 'Tailor your CV for PublicSector role',
-    description: 'Closing date is approaching. CV ready but not reviewed.',
-    action: 'View Job',
-  },
-]
-
 const priorityBadgeColors: Record<string, string> = {
   High: 'bg-accent-rose/[0.12] text-accent-rose',
   Medium: 'bg-accent-indigo/[0.12] text-accent-indigo',
@@ -144,10 +81,10 @@ export default function Reports() {
   const [currentWeek, setCurrentWeek] = useState(new Date())
   const [dateRange, setDateRange] = useState<DateRange>('this_week')
 
-  // Live jobs (fall back to seed data)
-  const [jobs, setJobs] = useState<Job[]>(mockJobs)
+  // Live jobs from the authenticated account only.
+  const [jobs, setJobs] = useState<Job[]>([])
   useEffect(() => {
-    getJobs().then((r) => { if (r && r.length) setJobs(r) }).catch(() => {})
+    getJobs().then((r) => { if (r) setJobs(r) }).catch(() => {})
   }, [])
 
   // Calculate score distribution from real scored jobs
@@ -170,24 +107,83 @@ export default function Reports() {
   const handlePrevWeek = () => setCurrentWeek((w) => subWeeks(w, 1))
   const handleNextWeek = () => setCurrentWeek((w) => addWeeks(w, 1))
   const handleThisWeek = () => {
-    setCurrentWeek(new Date('2025-01-08'))
+    setCurrentWeek(new Date())
     setDateRange('this_week')
   }
 
-  // Summary numbers
-  const summaryStats = [
-    { label: 'Jobs Found', value: 43, sub: '+12 vs last week', trend: 'up' as const, icon: Briefcase, color: 'text-accent-cyan' },
-    { label: 'Strong Matches', value: 8, sub: 'score 70+', trend: 'up' as const, icon: Award, color: 'text-accent-orange' },
-    { label: 'Applications Sent', value: 3, sub: 'submitted', trend: 'neutral' as const, icon: ClipboardList, color: 'text-accent-emerald' },
-    { label: 'Interviews', value: 1, sub: 'scheduled', trend: 'up' as const, icon: TrendingUp, color: 'text-accent-indigo' },
+  const periodJobs = useMemo(() => jobs.filter((job) => {
+    const created = new Date(job.created_at).getTime()
+    return created >= weekStart.getTime() && created <= weekEnd.getTime() + 86400000
+  }), [jobs, weekStart, weekEnd])
+
+  const weeklyData = useMemo(() => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
+    const matching = periodJobs.filter((job) => ((new Date(job.created_at).getDay() + 6) % 7) === index)
+    return { day, jobs: matching.length, strong: matching.filter((job) => (job.match_score || 0) >= 70).length }
+  }), [periodJobs])
+
+  const sourceData = useMemo(() => {
+    const bySource = new Map<string, { source: string; total: number; strong: number }>()
+    for (const job of jobs) {
+      const source = job.source || 'Unknown'
+      const entry = bySource.get(source) || { source, total: 0, strong: 0 }
+      entry.total++
+      if ((job.match_score || 0) >= 70) entry.strong++
+      bySource.set(source, entry)
+    }
+    return [...bySource.values()].sort((a, b) => b.total - a.total).slice(0, 6)
+  }, [jobs])
+
+  const funnelData = useMemo(() => {
+    const count = (statuses: string[]) => jobs.filter((job) => statuses.includes(job.status)).length
+    const stages = [
+      { stage: 'Found', count: jobs.length, color: '#22D3EE' },
+      { stage: 'Saved', count: count(['saved', 'cv_drafted', 'cl_drafted', 'ready_to_apply', 'applied', 'interview', 'technical_test', 'offer']), color: '#A78BFA' },
+      { stage: 'Applied', count: count(['applied', 'interview', 'technical_test', 'offer']), color: '#34D399' },
+      { stage: 'Interview', count: count(['interview', 'technical_test', 'offer']), color: '#FB923C' },
+      { stage: 'Offer', count: count(['offer']), color: '#34D399' },
+    ]
+    return stages.map((stage, index) => ({
+      ...stage,
+      pct: index === 0 || !stages[index - 1].count ? undefined : `${Math.round((stage.count / stages[index - 1].count) * 100)}%`,
+    }))
+  }, [jobs])
+
+  const missingSkills = useMemo(() => {
+    const counts = new Map<string, { skill: string; mentions: number; strongMatchJobs: number }>()
+    for (const job of jobs) for (const skill of job.match_analysis?.missing_skills || []) {
+      const entry = counts.get(skill) || { skill, mentions: 0, strongMatchJobs: 0 }
+      entry.mentions++
+      if ((job.match_score || 0) >= 70) entry.strongMatchJobs++
+      counts.set(skill, entry)
+    }
+    return [...counts.values()].sort((a, b) => b.mentions - a.mentions).slice(0, 8)
+  }, [jobs])
+
+  const strongMatches = jobs.filter((job) => (job.match_score || 0) >= 70)
+  const applications = jobs.filter((job) => ['applied', 'interview', 'technical_test', 'offer'].includes(job.status))
+  const interviews = jobs.filter((job) => ['interview', 'technical_test'].includes(job.status))
+  const averageScore = jobs.length ? Math.round(jobs.reduce((sum, job) => sum + (job.match_score || 0), 0) / jobs.length) : 0
+
+  const summaryStats: { label: string; value: number; sub: string; trend: 'up' | 'neutral'; icon: typeof Briefcase; color: string }[] = [
+    { label: 'Jobs Found', value: periodJobs.length, sub: 'in this period', trend: 'neutral' as const, icon: Briefcase, color: 'text-accent-cyan' },
+    { label: 'Strong Matches', value: strongMatches.length, sub: 'score 70+', trend: 'neutral' as const, icon: Award, color: 'text-accent-orange' },
+    { label: 'Applications Sent', value: applications.length, sub: 'submitted', trend: 'neutral' as const, icon: ClipboardList, color: 'text-accent-emerald' },
+    { label: 'Interviews', value: interviews.length, sub: 'in pipeline', trend: 'neutral' as const, icon: TrendingUp, color: 'text-accent-indigo' },
   ]
 
-  // Additional stats
   const moreStats = [
-    { label: 'CVs Generated', value: 2, icon: Briefcase },
-    { label: 'Cover Letters', value: 2, icon: ClipboardList },
-    { label: 'Rejections', value: 1, icon: XIcon },
-    { label: 'Avg Match Score', value: '79%', icon: Target },
+    { label: 'CVs Drafted', value: jobs.filter((job) => job.status === 'cv_drafted').length, icon: Briefcase },
+    { label: 'Cover Letters', value: jobs.filter((job) => job.status === 'cl_drafted').length, icon: ClipboardList },
+    { label: 'Rejections', value: jobs.filter((job) => job.status === 'rejected').length, icon: XIcon },
+    { label: 'Avg Match Score', value: `${averageScore}%`, icon: Target },
+  ]
+
+  const recommendedActions = jobs.length ? [
+    { priority: 'High', title: 'Review your strongest unapplied matches', description: `${strongMatches.filter((job) => !['applied', 'interview', 'technical_test', 'offer'].includes(job.status)).length} strong matches still need a decision.`, action: 'Open Jobs', path: '/jobs' },
+    ...(missingSkills[0] ? [{ priority: 'High', title: `Build evidence for ${missingSkills[0].skill}`, description: `It appears in ${missingSkills[0].mentions} matched roles. Add it to your learning goals and a real project.`, action: 'Open Skill Gaps', path: '/skill-gaps' }] : []),
+    { priority: 'Medium', title: 'Keep your evidence current', description: 'Update projects and skills whenever you complete meaningful work.', action: 'Open Profile', path: '/profile' },
+  ] : [
+    { priority: 'High', title: 'Build your JobPilot workspace', description: 'Complete your profile, then run your first JobPilot search to create a real report.', action: 'Open Profile', path: '/profile' },
   ]
 
   return (
@@ -259,7 +255,7 @@ export default function Reports() {
           </div>
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={WEEKLY_DATA} barGap={2}>
+              <BarChart data={weeklyData} barGap={2}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" vertical={false} />
                 <XAxis dataKey="day" stroke="#64748B" fontSize={12} axisLine={false} tickLine={false} />
                 <YAxis stroke="#64748B" fontSize={12} axisLine={false} tickLine={false} />
@@ -412,7 +408,7 @@ export default function Reports() {
             <h3 className="font-heading text-base font-semibold text-text-primary">Best Performing Sources</h3>
           </div>
           <div className="space-y-3">
-            {SOURCE_DATA.map((source, i) => (
+            {sourceData.map((source, i) => (
               <div key={source.source}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-sm text-text-primary font-medium">{source.source}</span>
@@ -424,7 +420,7 @@ export default function Reports() {
                 <div className="h-2 rounded-full bg-bg-tertiary overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: `${(source.total / 15) * 100}%` }}
+                    animate={{ width: `${(source.total / Math.max(1, sourceData[0]?.total || 1)) * 100}%` }}
                     transition={{ duration: 0.6, delay: 0.34 + i * 0.08, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }}
                     className="h-full rounded-full bg-accent-cyan relative"
                   >
@@ -453,7 +449,7 @@ export default function Reports() {
         </div>
         <div className="h-[240px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={MISSING_SKILLS} layout="vertical" margin={{ left: 5, right: 30 }}>
+            <BarChart data={missingSkills} layout="vertical" margin={{ left: 5, right: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" horizontal={false} />
               <XAxis type="number" stroke="#64748B" fontSize={12} />
               <YAxis dataKey="skill" type="category" stroke="#94A3B8" fontSize={12} width={80} />
@@ -503,8 +499,8 @@ export default function Reports() {
           </div>
 
           <div className="space-y-2">
-            {FUNNEL_DATA.map((stage, i) => {
-              const maxCount = FUNNEL_DATA[0].count
+            {funnelData.map((stage, i) => {
+              const maxCount = funnelData[0].count
               const widthPercent = maxCount > 0 ? (stage.count / maxCount) * 100 : 0
               return (
                 <motion.div
@@ -538,7 +534,7 @@ export default function Reports() {
                       <span className="w-10 text-xs text-text-muted flex-shrink-0">{stage.pct}</span>
                     )}
                   </div>
-                  {i < FUNNEL_DATA.length - 1 && (
+                  {i < funnelData.length - 1 && (
                     <div className="flex items-center gap-3 py-0.5">
                       <div className="w-20 flex-shrink-0" />
                       <div className="flex-1 flex justify-center">
@@ -565,7 +561,7 @@ export default function Reports() {
           </div>
 
           <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-2.5">
-            {RECOMMENDED_ACTIONS.map((action, i) => (
+            {recommendedActions.map((action, i) => (
               <motion.div
                 key={action.title}
                 custom={i}
@@ -579,7 +575,7 @@ export default function Reports() {
                   </span>
                 </div>
                 <p className="text-xs text-text-secondary mb-2">{action.description}</p>
-                <button className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-default text-xs text-text-secondary hover:bg-bg-secondary hover:text-text-primary transition-colors">
+                <button onClick={() => { window.location.hash = `#${action.path}` }} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-border-default text-xs text-text-secondary hover:bg-bg-secondary hover:text-text-primary transition-colors">
                   {action.action}
                   <Zap size={10} />
                 </button>
@@ -603,26 +599,24 @@ export default function Reports() {
 
         <div className="space-y-3 text-[15px] text-text-secondary leading-relaxed">
           <p>
-            This week was productive — <strong className="text-text-primary">43 jobs</strong> were discovered across{' '}
-            <strong className="text-text-primary">12 sources</strong>, with{' '}
-            <strong className="text-text-primary">8 scoring as strong matches</strong> (70+). You applied to{' '}
-            <strong className="text-text-primary">3 roles</strong> and have{' '}
-            <strong className="text-text-primary">1 interview</strong> scheduled for Thursday.
+            JobPilot has <strong className="text-text-primary">{jobs.length} jobs</strong> in this workspace across{' '}
+            <strong className="text-text-primary">{sourceData.length} sources</strong>, with{' '}
+            <strong className="text-text-primary">{strongMatches.length} strong matches</strong> (70+). You have progressed{' '}
+            <strong className="text-text-primary">{applications.length} applications</strong> and currently have{' '}
+            <strong className="text-text-primary">{interviews.length} interview-stage roles</strong>.
           </p>
-          <p>
-            Your biggest opportunity gap remains <strong className="text-accent-rose">AWS</strong>, which appeared in{' '}
-            <strong className="text-text-primary">18 job descriptions</strong> and blocked{' '}
-            <strong className="text-text-primary">5 roles</strong> that would otherwise have been strong matches.{' '}
-            <strong className="text-accent-rose">Docker</strong> was the second most common missing skill (12 mentions).
-          </p>
-          <p>
-            Your <em className="text-text-primary">Hair Salon Booking System</em> continues to be the most referenced project across matched roles. The{' '}
-            <em className="text-text-primary">MMS — SMS &amp; Voice Call Web App</em> is gaining relevance for full-stack positions.
-          </p>
+          {missingSkills[0] && (
+            <p>
+              The most repeated evidence gap is <strong className="text-accent-rose">{missingSkills[0].skill}</strong>, appearing in{' '}
+              <strong className="text-text-primary">{missingSkills[0].mentions} matched job descriptions</strong>. Add it to your JobPilot learning goals only if it supports your target roles, then prove it through a real project.
+            </p>
+          )}
           <div className="flex items-center gap-2 pt-2">
             <Zap size={14} className="text-accent-indigo flex-shrink-0" />
             <p className="font-medium text-text-primary">
-              Focus for next week: Apply to the 2 strong matches with approaching deadlines, and consider deploying one project to AWS free tier to close your biggest skill gap.
+              {jobs.length
+                ? 'Next JobPilot action: review your strongest unapplied matches, then tailor the CV for the best-supported role.'
+                : 'Next JobPilot action: complete Career Profile and run your first search so this report can use real evidence.'}
             </p>
           </div>
         </div>

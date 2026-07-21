@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Palette,
@@ -23,10 +24,11 @@ import {
   Sparkles,
   Code,
   Shield,
-  Eye,
-  EyeOff,
   Globe,
 } from 'lucide-react'
+import { useAuthStore } from '@/store/authStore'
+import { useAuth } from '@/hooks/useAuth'
+import { getDocuments, getStats } from '@/lib/api'
 
 // ─────────────────────────────────────────────
 // Animation config
@@ -421,11 +423,17 @@ function NotificationsTab() {
 // ════════════════════════════════════════════
 
 function AccountTab() {
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
-  const [changeEmailOpen, setChangeEmailOpen] = useState(false)
-  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const user = useAuthStore((s) => s.user)
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const createdAt = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : 'Not available'
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login')
+  }
 
   return (
     <div className="space-y-6">
@@ -438,14 +446,11 @@ function AccountTab() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <Mail size={16} className="text-text-muted" />
-            <span className="text-body-sm text-text-primary">demo@jobpilot.ai</span>
+            <span className="text-body-sm text-text-primary">{user?.email || 'Signed-in account'}</span>
           </div>
-          <button
-            onClick={() => setChangeEmailOpen(true)}
-            className="px-3 py-1.5 rounded-button border border-border-default text-body-xs text-text-secondary hover:text-text-primary hover:bg-bg-tertiary hover:border-border-focus transition-all"
-          >
-            Change Email
-          </button>
+          <span className="px-2.5 py-1 rounded-pill bg-accent-emerald-muted text-accent-emerald text-body-xs font-medium">
+            Authenticated
+          </span>
         </div>
       </SettingsCard>
 
@@ -455,14 +460,8 @@ function AccountTab() {
             <Lock size={16} className="text-text-muted" />
             <span className="text-body-sm text-text-primary">••••••••••••</span>
           </div>
-          <button
-            onClick={() => setChangePasswordOpen(true)}
-            className="px-3 py-1.5 rounded-button border border-border-default text-body-xs text-text-secondary hover:text-text-primary hover:bg-bg-tertiary hover:border-border-focus transition-all"
-          >
-            Change Password
-          </button>
         </div>
-        <p className="text-body-xs text-text-muted mt-2">Last changed: Never</p>
+        <p className="text-body-xs text-text-muted mt-2">Password changes are handled securely through “Forgot password” on the sign-in page.</p>
       </SettingsCard>
 
       <SettingsCard title="Two-Factor Authentication">
@@ -481,7 +480,7 @@ function AccountTab() {
       </SettingsCard>
 
       <SettingsCard title="Account Created">
-        <p className="text-body-sm text-text-secondary">January 5, 2025</p>
+        <p className="text-body-sm text-text-secondary">{createdAt}</p>
       </SettingsCard>
 
       {/* Danger Zone */}
@@ -496,7 +495,7 @@ function AccountTab() {
             <p className="text-body-sm font-medium text-text-primary">Log Out</p>
             <p className="text-body-xs text-text-muted">Sign out of your account on this device.</p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-all">
+          <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-all">
             <LogOut size={14} />
             Log Out
           </button>
@@ -507,158 +506,12 @@ function AccountTab() {
             <p className="text-body-sm font-medium text-accent-rose">Delete Account</p>
             <p className="text-body-xs text-text-muted">Permanently delete your account and all associated data.</p>
           </div>
-          <button
-            onClick={() => setDeleteAccountOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-button bg-accent-rose text-white text-body-sm font-medium hover:bg-accent-rose/90 hover:scale-[1.02] active:scale-[0.98] transition-all"
-          >
+          <a href="#/privacy" className="flex items-center gap-2 px-4 py-2 rounded-button bg-accent-rose text-white text-body-sm font-medium hover:bg-accent-rose/90 hover:scale-[1.02] active:scale-[0.98] transition-all">
             <Trash2 size={14} />
-            Delete Account
-          </button>
+            Manage My Data
+          </a>
         </div>
       </div>
-
-      {/* Change Email Modal */}
-      <AnimatePresence>
-        {changeEmailOpen && (
-          <Modal onClose={() => setChangeEmailOpen(false)} title="Change Email Address">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-body-sm text-text-secondary mb-1.5">Current Email</label>
-                <input
-                  type="email"
-                  defaultValue="demo@jobpilot.ai"
-                  disabled
-                  className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-subtle text-sm text-text-muted opacity-60 cursor-not-allowed"
-                />
-              </div>
-              <div>
-                <label className="block text-body-sm text-text-secondary mb-1.5">New Email</label>
-                <input
-                  type="email"
-                  placeholder="new@email.com"
-                  className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-body-sm text-text-secondary mb-1.5">Password (to confirm)</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="Enter password"
-                    className="w-full h-10 px-3 pr-10 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
-                  />
-                  <button
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-                  >
-                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-              </div>
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  onClick={() => setChangeEmailOpen(false)}
-                  className="px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:bg-bg-tertiary transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => setChangeEmailOpen(false)}
-                  className="px-4 py-2 rounded-button bg-accent-indigo text-white text-body-sm font-medium hover:bg-accent-indigo-hover transition-colors"
-                >
-                  Update Email
-                </button>
-              </div>
-            </div>
-          </Modal>
-        )}
-      </AnimatePresence>
-
-      {/* Change Password Modal */}
-      <AnimatePresence>
-        {changePasswordOpen && (
-          <Modal onClose={() => setChangePasswordOpen(false)} title="Change Password">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-body-sm text-text-secondary mb-1.5">Current Password</label>
-                <input
-                  type="password"
-                  placeholder="Current password"
-                  className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-body-sm text-text-secondary mb-1.5">New Password</label>
-                <input
-                  type="password"
-                  placeholder="New password (min 8 characters)"
-                  className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-body-sm text-text-secondary mb-1.5">Confirm New Password</label>
-                <input
-                  type="password"
-                  placeholder="Confirm new password"
-                  className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:outline-none"
-                />
-              </div>
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  onClick={() => setChangePasswordOpen(false)}
-                  className="px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:bg-bg-tertiary transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => setChangePasswordOpen(false)}
-                  className="px-4 py-2 rounded-button bg-accent-indigo text-white text-body-sm font-medium hover:bg-accent-indigo-hover transition-colors"
-                >
-                  Update Password
-                </button>
-              </div>
-            </div>
-          </Modal>
-        )}
-      </AnimatePresence>
-
-      {/* Delete Account Modal */}
-      <AnimatePresence>
-        {deleteAccountOpen && (
-          <Modal onClose={() => { setDeleteAccountOpen(false); setDeleteConfirmText('') }} title="Delete Account">
-            <div className="p-3 rounded-lg bg-accent-rose-muted/20 border border-accent-rose/20 mb-4">
-              <p className="text-body-sm text-accent-rose">
-                This will permanently delete your account and all associated data. This action cannot be undone.
-              </p>
-            </div>
-            <p className="text-body-sm text-text-secondary mb-4">
-              Type <span className="font-mono text-accent-rose font-medium">DELETE</span> to confirm.
-            </p>
-            <input
-              type="text"
-              value={deleteConfirmText}
-              onChange={(e) => setDeleteConfirmText(e.target.value)}
-              placeholder='Type "DELETE" to confirm'
-              className="w-full h-10 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-rose focus:outline-none mb-4"
-            />
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => { setDeleteAccountOpen(false); setDeleteConfirmText('') }}
-                className="px-4 py-2 rounded-button border border-border-default text-body-sm text-text-secondary hover:bg-bg-tertiary transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={deleteConfirmText !== 'DELETE'}
-                onClick={() => { setDeleteAccountOpen(false); setDeleteConfirmText('') }}
-                className="px-4 py-2 rounded-button bg-accent-rose text-white text-body-sm font-medium hover:bg-accent-rose/90 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Delete Account
-              </button>
-            </div>
-          </Modal>
-        )}
-      </AnimatePresence>
     </div>
   )
 }
@@ -673,6 +526,15 @@ function LimitsTab() {
   const [autoDeleteDays, setAutoDeleteDays] = useLocalStorageState('jobpilot-auto-delete-days', 90)
   const [maxTailoredCVs, setMaxTailoredCVs] = useLocalStorageState('jobpilot-max-cvs', 20)
   const [pauseAllSearches, setPauseAllSearches] = useState(false)
+  const [storedCounts, setStoredCounts] = useState({ jobs: 0, documents: 0 })
+
+  useEffect(() => {
+    let alive = true
+    Promise.all([getStats(), getDocuments()]).then(([stats, documents]) => {
+      if (alive) setStoredCounts({ jobs: stats?.totalJobs || 0, documents: documents?.length || 0 })
+    })
+    return () => { alive = false }
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -708,12 +570,12 @@ function LimitsTab() {
       <SettingsCard title="Job Storage">
         <div className="flex items-center justify-between mb-2">
           <span className="text-body-sm text-text-secondary">Jobs stored</span>
-          <span className="text-mono-sm text-accent-indigo font-medium">247 / {maxJobsStored}</span>
+          <span className="text-mono-sm text-accent-indigo font-medium">{storedCounts.jobs} / {maxJobsStored}</span>
         </div>
         <div className="w-full h-2 rounded-full bg-bg-elevated overflow-hidden mb-3">
           <div
             className="h-full rounded-full bg-accent-cyan transition-all duration-300"
-            style={{ width: `${Math.min((247 / maxJobsStored) * 100, 100)}%` }}
+            style={{ width: `${Math.min((storedCounts.jobs / maxJobsStored) * 100, 100)}%` }}
           />
         </div>
         <div className="flex items-center gap-4 mt-4">
@@ -743,7 +605,7 @@ function LimitsTab() {
       <SettingsCard title="CV Versions">
         <div className="flex items-center justify-between mb-2">
           <span className="text-body-sm text-text-secondary">Tailored CVs stored</span>
-          <span className="text-mono-sm text-accent-violet font-medium">3 / {maxTailoredCVs}</span>
+          <span className="text-mono-sm text-accent-violet font-medium">{storedCounts.documents} / {maxTailoredCVs}</span>
         </div>
         <div className="flex items-center gap-4 mt-3">
           <label className="text-body-sm text-text-secondary whitespace-nowrap">Maximum stored:</label>

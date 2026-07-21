@@ -26,7 +26,6 @@ import {
 import { useUIStore } from '@/store/uiStore'
 import { useAuth } from '@/hooks/useAuth'
 import { useAuthStore } from '@/store/authStore'
-import { mockUserProfile } from '@/data/mockData'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -142,10 +141,10 @@ interface SidebarContentProps {
 }
 
 function SidebarContent({ sidebarCollapsed, toggleSidebar, onLogout, isMobile }: SidebarContentProps) {
-  // Show the ACTUAL signed-in account (falls back to the seed profile locally)
+  // Show only the authenticated account identity, never a demo identity.
   const authUser = useAuthStore((s) => s.user)
-  const displayName = authUser?.user_metadata?.full_name || authUser?.email?.split('@')[0] || mockUserProfile.full_name
-  const displayEmail = authUser?.email || mockUserProfile.email
+  const displayName = authUser?.user_metadata?.full_name || authUser?.email?.split('@')[0] || 'User'
+  const displayEmail = authUser?.email || ''
   return (
     <>
       {/* Logo Area */}

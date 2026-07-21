@@ -1,4 +1,4 @@
-import { Github, Globe, Shield, Heart } from 'lucide-react'
+import { Github, Shield, Heart } from 'lucide-react'
 
 const links = [
   { label: 'Jobs', href: '#/jobs' },
@@ -9,7 +9,6 @@ const links = [
 
 const external = [
   { label: 'GitHub', href: 'https://github.com/2118476/JobPilot', icon: Github },
-  { label: 'Portfolio', href: 'https://example.com', icon: Globe },
 ]
 
 export function Footer() {

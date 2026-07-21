@@ -21,9 +21,9 @@ import {
   Activity,
   Sparkles,
 } from 'lucide-react'
-import { mockSearchSettings } from '@/data/mockData'
 import { searchJobs, getAutomationSettings, saveAutomationSettings, type AutomationSettings } from '@/lib/api'
 import { useUIStore } from '@/store/uiStore'
+import { useAuthStore } from '@/store/authStore'
 
 // ─────────────────────────────────────────────
 // Types
@@ -68,58 +68,6 @@ interface SearchSettingsState {
 // Default keywords from design spec
 // ─────────────────────────────────────────────
 
-const DEFAULT_KEYWORDS = [
-  'junior software developer London',
-  'graduate software developer London',
-  'entry level software developer UK',
-  'Java developer junior London',
-  'Spring Boot developer junior',
-  'React developer junior remote',
-  'full stack developer junior London',
-  'backend developer junior Java',
-  'SQL developer junior London',
-  'database assistant SQL London',
-  'data assistant SQL London',
-  'IT support entry level London',
-  'technical support analyst junior',
-  'Civil Service digital developer',
-  'public sector junior developer',
-  'junior web developer London',
-  'graduate full stack developer UK',
-]
-
-const DEFAULT_JOB_TITLES = [
-  'Junior Software Developer',
-  'Graduate Software Developer',
-  'Full Stack Developer',
-  'Backend Developer',
-  'Java Developer',
-  'React Developer',
-  'Database Assistant',
-  'Data Assistant',
-  'IT Support',
-  'Technical Support Analyst',
-]
-
-const DEFAULT_EXCLUDED_TITLES = [
-  'Senior',
-  'Lead',
-  'Principal',
-  'Head of',
-  'Manager',
-  'Director',
-  'VP',
-  '5+ years',
-  '10+ years',
-]
-
-const DEFAULT_EXCLUDED_KEYWORDS = [
-  'Senior',
-  'Principal',
-  '10 years experience',
-  'Extensive commercial',
-]
-
 const DEFAULT_EXCLUDED_COMPANIES: string[] = []
 
 // ─────────────────────────────────────────────
@@ -127,20 +75,14 @@ const DEFAULT_EXCLUDED_COMPANIES: string[] = []
 // ─────────────────────────────────────────────
 
 const DEFAULT_SOURCES: JobSource[] = [
-  { id: 'adzuna', name: 'Adzuna', enabled: true, status: 'healthy', lastChecked: '2 hours ago', jobsToday: 3, jobsThisWeek: 15 },
-  { id: 'reed', name: 'Reed', enabled: true, status: 'healthy', lastChecked: '1 hour ago', jobsToday: 4, jobsThisWeek: 22 },
-  { id: 'govuk', name: 'GOV.UK Find a Job', enabled: true, status: 'healthy', lastChecked: '3 hours ago', jobsToday: 2, jobsThisWeek: 8 },
-  { id: 'civil-service', name: 'Civil Service Jobs', enabled: true, status: 'healthy', lastChecked: '4 hours ago', jobsToday: 1, jobsThisWeek: 6 },
-  { id: 'nhs', name: 'NHS Jobs', enabled: true, status: 'healthy', lastChecked: '2 hours ago', jobsToday: 2, jobsThisWeek: 10 },
-  { id: 'linkedin', name: 'LinkedIn', enabled: true, status: 'healthy', lastChecked: '30 mins ago', jobsToday: 8, jobsThisWeek: 45 },
-  { id: 'indeed', name: 'Indeed', enabled: true, status: 'rate_limited', lastChecked: '5 hours ago', jobsToday: 0, jobsThisWeek: 18 },
-  { id: 'totaljobs', name: 'Totaljobs', enabled: true, status: 'healthy', lastChecked: '1 hour ago', jobsToday: 3, jobsThisWeek: 14 },
-  { id: 'cwjobs', name: 'CWJobs', enabled: true, status: 'healthy', lastChecked: '2 hours ago', jobsToday: 2, jobsThisWeek: 9 },
-  { id: 'otta', name: 'Otta', enabled: false, status: 'disabled', lastChecked: 'Never', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'company-careers', name: 'Company Career Pages', enabled: false, status: 'disabled', lastChecked: 'Never', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'local-council', name: 'Local Council Jobs', enabled: false, status: 'disabled', lastChecked: 'Never', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'public-sector-digital', name: 'Public Sector Digital', enabled: false, status: 'disabled', lastChecked: 'Never', jobsToday: 0, jobsThisWeek: 0 },
-  { id: 'remote-boards', name: 'Remote Job Boards', enabled: false, status: 'disabled', lastChecked: 'Never', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'adzuna', name: 'Adzuna', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'reed', name: 'Reed', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'govuk', name: 'GOV.UK Find a Job', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'civil-service', name: 'Civil Service Jobs', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'arbeitnow', name: 'Arbeitnow', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'themuse', name: 'The Muse', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'jobicy', name: 'Jobicy', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
+  { id: 'remotive', name: 'Remotive', enabled: true, status: 'healthy', lastChecked: 'Not checked', jobsToday: 0, jobsThisWeek: 0 },
 ]
 
 // ─────────────────────────────────────────────
@@ -165,6 +107,8 @@ const staggerItem = {
 export default function SearchSettings() {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
+  const authUser = useAuthStore((s) => s.user)
+  const accountSettingsKey = authUser?.id ? `jobpilot_search_settings_${authUser.id}` : null
 
   // ── LIVE automation settings (persisted to the backend, drives the scheduler) ──
   const [automation, setAutomation] = useState<AutomationSettings>({
@@ -186,28 +130,28 @@ export default function SearchSettings() {
   }
 
   const [settings, setSettings] = useState<SearchSettingsState>({
-    search_active: mockSearchSettings.search_active,
-    keywords: [...DEFAULT_KEYWORDS],
-    exclusions: [...DEFAULT_EXCLUDED_KEYWORDS],
+    search_active: false,
+    keywords: [],
+    exclusions: [],
     excludedCompanies: [...DEFAULT_EXCLUDED_COMPANIES],
-    excludedTitles: [...DEFAULT_EXCLUDED_TITLES],
-    preferred_locations: [...mockSearchSettings.preferred_locations],
-    remote_preference: mockSearchSettings.remote_preference,
-    salary_min: mockSearchSettings.salary_min ?? 20000,
-    salary_max: mockSearchSettings.salary_max ?? 40000,
-    currency: mockSearchSettings.currency,
+    excludedTitles: [],
+    preferred_locations: [],
+    remote_preference: 'no_preference',
+    salary_min: 0,
+    salary_max: 0,
+    currency: 'GBP',
     frequency: 'twice_daily',
     morningTime: '08:00',
     eveningTime: '18:00',
     dailySearchLimit: 30,
     sources: DEFAULT_SOURCES.map((s) => ({ ...s })),
-    seniorityLevels: ['entry-level', 'junior'],
-    roleTypes: ['software_developer', 'tech_support', 'data_database', 'public_sector', 'graduate'],
-    workArrangements: ['remote', 'hybrid'],
+    seniorityLevels: [],
+    roleTypes: [],
+    workArrangements: [],
     dateFilter: '7',
-    salaryMinimum: 20000,
+    salaryMinimum: 0,
     datePostedFilter: '7',
-    jobTitles: [...DEFAULT_JOB_TITLES],
+    jobTitles: [],
   })
 
   const [hasChanges, setHasChanges] = useState(false)
@@ -239,7 +183,7 @@ export default function SearchSettings() {
   const handleSave = () => {
     setHasChanges(false)
     try {
-      localStorage.setItem('jobpilot_search_settings', JSON.stringify(settings))
+      if (accountSettingsKey) localStorage.setItem(accountSettingsKey, JSON.stringify(settings))
     } catch { /* localStorage unavailable */ }
     addToast({ type: 'success', title: 'Settings saved', message: 'Your search preferences have been stored.' })
   }
@@ -247,39 +191,38 @@ export default function SearchSettings() {
   // Restore saved settings on mount
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('jobpilot_search_settings')
+      const raw = accountSettingsKey ? localStorage.getItem(accountSettingsKey) : null
       if (raw) {
         setSettings((prev) => ({ ...prev, ...JSON.parse(raw) }))
         setHasChanges(false)
       }
     } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [accountSettingsKey])
 
   const handleReset = () => {
     setSettings({
-      search_active: true,
-      keywords: [...DEFAULT_KEYWORDS],
-      exclusions: [...DEFAULT_EXCLUDED_KEYWORDS],
+      search_active: false,
+      keywords: [],
+      exclusions: [],
       excludedCompanies: [...DEFAULT_EXCLUDED_COMPANIES],
-      excludedTitles: [...DEFAULT_EXCLUDED_TITLES],
-      preferred_locations: ['London', 'Remote UK', 'Hybrid'],
-      remote_preference: 'remote',
-      salary_min: 20000,
-      salary_max: 40000,
+      excludedTitles: [],
+      preferred_locations: [],
+      remote_preference: 'no_preference',
+      salary_min: 0,
+      salary_max: 0,
       currency: 'GBP',
       frequency: 'twice_daily',
       morningTime: '08:00',
       eveningTime: '18:00',
       dailySearchLimit: 30,
       sources: DEFAULT_SOURCES.map((s) => ({ ...s })),
-      seniorityLevels: ['entry-level', 'junior'],
-      roleTypes: ['software_developer', 'tech_support', 'data_database', 'public_sector', 'graduate'],
-      workArrangements: ['remote', 'hybrid'],
+      seniorityLevels: [],
+      roleTypes: [],
+      workArrangements: [],
       dateFilter: '7',
-      salaryMinimum: 20000,
+      salaryMinimum: 0,
       datePostedFilter: '7',
-      jobTitles: [...DEFAULT_JOB_TITLES],
+      jobTitles: [],
     })
     setHasChanges(true)
   }

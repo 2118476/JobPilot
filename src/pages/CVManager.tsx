@@ -3,13 +3,13 @@ import { getDocuments, deleteDocument as apiDeleteDocument, getProfile } from '@
 import { downloadAsPdf } from '@/lib/pdf'
 import { diffLines, diffStats } from '@/lib/diff'
 import { useUIStore } from '@/store/uiStore'
+import { useAuthStore } from '@/store/authStore'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileText, FileCheck, Upload, Download, Pencil, Eye, Trash2, Copy, X,
   GitBranch, Sparkles, AlertCircle, CheckCircle2, Shield, Zap,
   ChevronRight, Activity, Check, XCircle, Mail, History
 } from 'lucide-react'
-// mock data defined inline in this file
 
 // ─── Types ────────────────────────────────────
 interface CVVersion {
@@ -29,14 +29,19 @@ interface CVVersion {
 }
 
 // ─── Master CV persistence (survives reloads) ──
-const MASTER_KEY = 'jobpilot_master_cv'
-const MASTER_TS_KEY = 'jobpilot_master_cv_updated'
+function masterStorageKeys(userId: string) {
+  return {
+    text: `jobpilot_master_cv_${userId}`,
+    updated: `jobpilot_master_cv_updated_${userId}`,
+  }
+}
 
-function persistMaster(text: string): string {
+function persistMaster(text: string, userId: string): string {
   const ts = new Date().toISOString()
+  const keys = masterStorageKeys(userId)
   try {
-    localStorage.setItem(MASTER_KEY, text)
-    localStorage.setItem(MASTER_TS_KEY, ts)
+    localStorage.setItem(keys.text, text)
+    localStorage.setItem(keys.updated, ts)
   } catch { /* localStorage unavailable */ }
   return ts
 }
@@ -186,16 +191,18 @@ function ConfirmationDialog({ open, title, message, onConfirm, onCancel }: { ope
 
 export default function CVManager() {
   const addToast = useUIStore((s) => s.addToast)
+  const authUserId = useAuthStore((s) => s.user?.id || 'anonymous')
+  const masterKeys = masterStorageKeys(authUserId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profileData, setProfileData] = useState<any | null>(null)
   // Master CV persists in localStorage (with a real "last updated" timestamp).
   // Default comes from the LOGGED-IN user's profile (fetched below), never a
   // hardcoded CV — new accounts see their own data or an empty state.
   const [masterCV, setMasterCV] = useState(() => {
-    try { return localStorage.getItem(MASTER_KEY) || '' } catch { return '' }
+    try { return localStorage.getItem(masterKeys.text) || '' } catch { return '' }
   })
   const [masterUpdated, setMasterUpdated] = useState<string | null>(() => {
-    try { return localStorage.getItem(MASTER_TS_KEY) } catch { return null }
+    try { return localStorage.getItem(masterKeys.updated) } catch { return null }
   })
   const [tailoredVersions, setTailoredVersions] = useState<CVVersion[]>(initialTailoredVersions)
   const [filterType, setFilterType] = useState<'all' | 'cv' | 'cover_letter'>('all')
@@ -218,7 +225,7 @@ export default function CVManager() {
         if (!p) return
         setProfileData(p)
         try {
-          if (!localStorage.getItem(MASTER_KEY)) {
+          if (!localStorage.getItem(masterKeys.text)) {
             const generated = buildMasterFromProfile(p)
             if (generated) {
               setMasterCV(generated)
@@ -229,7 +236,7 @@ export default function CVManager() {
       })
       .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [masterKeys.text])
 
   // Load real AI-generated documents from the backend, grouped into version
   // histories: documents for the same job+type get version numbers (oldest = v1).
@@ -319,7 +326,7 @@ export default function CVManager() {
       const text = e.target?.result as string
       setMasterCV(text)
       setEditText(text)
-      setMasterUpdated(persistMaster(text))
+      setMasterUpdated(persistMaster(text, authUserId))
       addToast({ type: 'success', title: 'Master CV updated', message: file.name })
     }
     reader.readAsText(file)
@@ -328,7 +335,7 @@ export default function CVManager() {
   const handleSaveMaster = () => {
     setMasterCV(editText)
     setEditingMaster(false)
-    setMasterUpdated(persistMaster(editText))
+    setMasterUpdated(persistMaster(editText, authUserId))
     addToast({ type: 'success', title: 'Master CV saved' })
   }
 
@@ -337,7 +344,7 @@ export default function CVManager() {
     setEditText(pasteText)
     setShowPasteModal(false)
     setPasteText('')
-    setMasterUpdated(persistMaster(pasteText))
+    setMasterUpdated(persistMaster(pasteText, authUserId))
     addToast({ type: 'success', title: 'Master CV saved' })
   }
 
@@ -349,7 +356,7 @@ export default function CVManager() {
     }
     setMasterCV(generated)
     setEditText(generated)
-    setMasterUpdated(persistMaster(generated))
+    setMasterUpdated(persistMaster(generated, authUserId))
     addToast({ type: 'success', title: 'Master CV created from your profile' })
   }
 

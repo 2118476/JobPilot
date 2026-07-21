@@ -30,7 +30,6 @@ import {
   Sparkles,
   RefreshCw,
 } from 'lucide-react'
-import { mockJobs } from '@/data/mockData'
 import { getJobs as apiGetJobs, searchJobs, updateJob } from '@/lib/api'
 import { jobVerdict, verdictClasses } from '@/lib/verdict'
 import type { Job } from '@/types'
@@ -192,15 +191,15 @@ const defaultFilters: FilterState = {
 
 export default function JobsList() {
   const navigate = useNavigate()
-  const [jobs, setJobs] = useState<Job[]>(mockJobs)
+  const [jobs, setJobs] = useState<Job[]>([])
   const [liveMode, setLiveMode] = useState(false)
   const [searching, setSearching] = useState(false)
 
-  // Load live (AI-scored) jobs from the backend; fall back to seed data.
+  // An empty response is a real empty workspace, never a demo-data fallback.
   useEffect(() => {
     apiGetJobs()
       .then((r) => {
-        if (r && r.length) {
+        if (r) {
           setJobs(r)
           setLiveMode(true)
         }
@@ -231,8 +230,8 @@ export default function JobsList() {
   const [showBatchBar, setShowBatchBar] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
-  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set(mockJobs.filter(j => j.status === 'saved').map(j => j.id)))
-  const [skippedJobIds, setSkippedJobIds] = useState<Set<string>>(new Set(mockJobs.filter(j => j.status === 'skipped').map(j => j.id)))
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set())
+  const [skippedJobIds, setSkippedJobIds] = useState<Set<string>>(new Set())
   const PAGE_SIZE = 20
 
   // Keep saved/skipped sets in sync with persisted job state on (re)load

@@ -32,7 +32,6 @@ import {
   Bar,
   ResponsiveContainer,
 } from 'recharts'
-import { mockJobs } from '@/data/mockData'
 import { getStats, updateJob, type DashboardStats } from '@/lib/api'
 import { useUIStore } from '@/store/uiStore'
 import { formatDistanceToNow } from 'date-fns'
@@ -143,7 +142,7 @@ function ScoreRing({ score, size = 48 }: { score: number; size?: number }) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
-  const [searchActive, setSearchActive] = useState(true)
+  const [searchActive, setSearchActive] = useState(false)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
 
@@ -157,10 +156,10 @@ export default function Dashboard() {
     getStats().then((s) => { if (s) setStats(s) }).catch(() => {})
   }, [])
 
-  // Top matches (live, fall back to seed)
+  // Top matches from this account only.
   const topJobs = useMemo<Job[]>(() => {
     if (stats?.topMatches?.length) return stats.topMatches.slice(0, 3)
-    return [...mockJobs].sort((a, b) => b.match_score - a.match_score).slice(0, 3)
+    return []
   }, [stats])
 
   // Pipeline derived from real status counts

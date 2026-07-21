@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // api.ts — client for the JobPilot AI backend.
 // Every call fails soft (returns null / throws caught) so the UI
-// falls back to seed data when the backend isn't running.
+// returns explicit empty states for new accounts and null on transport errors.
 // ─────────────────────────────────────────────────────────────
 import type { Job } from '@/types'
 import { supabase } from '@/lib/supabase'
@@ -24,7 +24,7 @@ async function authHeader(): Promise<Record<string, string>> {
 // warms this cache). Avoids reshaping JobDetail's hook order for an async fetch.
 let _jobCache: Job[] = []
 export function cacheJobs(jobs: Job[]) {
-  if (jobs && jobs.length) _jobCache = jobs
+  _jobCache = Array.isArray(jobs) ? jobs : []
 }
 export function findCachedJob(id: string): Job | undefined {
   return _jobCache.find((j) => j.id === id)
@@ -78,15 +78,12 @@ export async function health(): Promise<{ ok: boolean; ai: AIStatus } | null> {
   }
 }
 
-/** Stored jobs (already scored). null if backend down or empty. */
+/** Stored jobs (already scored). Empty array means a genuinely empty account. */
 export async function getJobs(): Promise<Job[] | null> {
   try {
     const jobs = await req<Job[]>('/api/jobs', undefined, 8000)
-    if (jobs && jobs.length) {
-      cacheJobs(jobs)
-      return jobs
-    }
-    return null
+    cacheJobs(jobs || [])
+    return jobs || []
   } catch {
     return null
   }
@@ -175,6 +172,8 @@ export async function getStats(): Promise<DashboardStats | null> {
 export interface SkillGap {
   skill: string
   count: number
+  blocking: number
+  jobs: string[]
   demand: number
   userLevel: number
   category: 'frontend' | 'backend' | 'devops' | 'systems' | 'architecture'
@@ -310,6 +309,22 @@ export async function exportData(): Promise<Record<string, unknown> | null> {
   } catch {
     return null
   }
+}
+
+export interface ImportResult {
+  ok: boolean
+  profiles: number
+  jobs: number
+  documents: number
+  active_track: string
+}
+
+/** Restore a JobPilot workspace into the currently authenticated account only. */
+export async function importData(archive: Record<string, unknown>, replace = false): Promise<ImportResult> {
+  return req<ImportResult>('/api/import', {
+    method: 'POST',
+    body: JSON.stringify({ archive, replace }),
+  }, 120000)
 }
 
 /** Permanently delete ALL of the current user's stored data on the backend. */

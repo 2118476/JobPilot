@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
@@ -8,6 +8,7 @@ import {
   Database, Cloud, Wand2, Sparkles, AlertTriangle, Briefcase, CheckCircle2,
   ExternalLink, Server, Palette
 } from 'lucide-react'
+import { getProfile, saveProfile } from '@/lib/api'
 // ─── Types ────────────────────────────────────
 interface ProjectDetail {
   id: string
@@ -59,91 +60,6 @@ function getTechGradient(techs: string[]): string {
 }
 
 // ─── Mock Projects with Full Detail ───────────
-const initialProjects: ProjectDetail[] = [
-  {
-    id: 'proj-001',
-    name: 'MMS — SMS & Voice Call Web App',
-    shortDescription: 'Full-stack communication app to send SMS, make/receive calls and track call history, built with Twilio.',
-    description: 'A full-stack communication app that sends SMS, makes and receives voice calls, and tracks call history. Integrated Twilio APIs with dynamic callback URLs for both local and deployed environments, with backend call routing via TwiML and server-side error handling.',
-    backendTech: ['Java', 'Spring Boot'],
-    frontendTech: ['React'],
-    database: ['MySQL'],
-    deployment: ['Render', 'Vercel'],
-    apis: ['Twilio (SMS & Voice)', 'REST APIs', 'TwiML'],
-    features: [
-      'Send SMS and make/receive calls with full call-history tracking',
-      'Twilio APIs integrated with dynamic callback URLs (local + deployed)',
-      'Backend call routing with TwiML and server-side error handling',
-      'Responsive UI with accessibility, dark mode and animated feedback',
-    ],
-    problemsSolved: 'Provides an integrated SMS and voice communication tool, handling both outbound and inbound telephony with reliable call tracking.',
-    whatILearned: 'Gained hands-on experience integrating the Twilio API, handling telephony webhooks and callback URLs across environments, and building an accessible, responsive React frontend on a Spring Boot backend.',
-    githubUrl: 'https://github.com/example',
-    liveUrl: '',
-    jobTypes: ['Full-Stack Developer', 'Java Developer', 'API Integration Roles', 'React Developer'],
-    relevanceScore: 92,
-    category: 'personal',
-    startDate: '2025-01',
-    endDate: '',
-    current: false,
-  },
-  {
-    id: 'proj-002',
-    name: 'Hair Salon Booking System (Final Year Project)',
-    shortDescription: 'Secure appointment booking platform with admin/user roles and login authentication — BSc final-year project.',
-    description: 'A secure full-stack appointment booking platform with admin and user roles and login authentication, built as my BSc final-year individual project. Focused on optimised relational database design and clean, modular architecture.',
-    backendTech: ['Java', 'Spring Boot'],
-    frontendTech: ['React'],
-    database: ['MySQL'],
-    deployment: ['Render'],
-    apis: ['REST APIs'],
-    features: [
-      'Secure appointment booking with admin/user roles',
-      'Login authentication and access control',
-      'Relational database schemas designed and optimised for performance',
-      'Clean architecture and modular code practices',
-    ],
-    problemsSolved: 'Digitises salon appointment scheduling with secure role-based access, giving owners control over bookings and customers an easy way to book.',
-    whatILearned: 'Learned to design and optimise relational schemas, implement authentication, and structure a maintainable full-stack Java/Spring Boot application.',
-    githubUrl: 'https://github.com/example',
-    liveUrl: '',
-    jobTypes: ['Java Developer', 'Backend Developer', 'Full-Stack Developer', 'Spring Boot Developer'],
-    relevanceScore: 90,
-    category: 'personal',
-    startDate: '2023-10',
-    endDate: '2024-05',
-    current: false,
-  },
-  {
-    id: 'proj-003',
-    name: 'E-Learning Platform — "Coding for All" (Group Project)',
-    shortDescription: 'Team-built coding-lessons web app using agile methodology, with React and Spring Boot.',
-    description: 'A coding-lesson web app built as part of a team using agile methodology, as a second-year group project. Developed multiple frontend components and API integrations and contributed to sprint planning and a collaborative Git workflow.',
-    backendTech: ['Java', 'Spring Boot'],
-    frontendTech: ['React'],
-    database: ['MySQL'],
-    deployment: [],
-    apis: ['REST APIs'],
-    features: [
-      'Coding-lesson web app built collaboratively in a team',
-      'Multiple frontend components and API integrations',
-      'Agile methodology with sprint planning',
-      'Collaborative Git workflow',
-    ],
-    problemsSolved: 'Provides an accessible platform for learning to code, built to be scalable with a focus on user experience.',
-    whatILearned: 'Developed teamwork and agile skills, learned collaborative Git workflows, and practised building frontend components against a shared Spring Boot API.',
-    githubUrl: 'https://github.com/example',
-    liveUrl: '',
-    jobTypes: ['Full-Stack Developer', 'React Developer', 'Graduate Developer', 'Java Developer'],
-    relevanceScore: 82,
-    category: 'personal',
-    startDate: '2022-10',
-    endDate: '2023-05',
-    current: false,
-  },
-]
-
-// ─── Filter Options ───────────────────────────
 const filterOptions = [
   { label: 'All', value: 'all' },
   { label: 'Java', value: 'Java' },
@@ -219,12 +135,71 @@ function ConfirmationDialog({ open, title, message, onConfirm, onCancel }: { ope
 }
 
 export default function ProjectLibrary() {
-  const [projects, setProjects] = useState<ProjectDetail[]>(initialProjects)
+  const [projects, setProjects] = useState<ProjectDetail[]>([])
+  const profileRef = useRef<Record<string, any>>({})
+  const [projectsLoaded, setProjectsLoaded] = useState(false)
   const [activeFilter, setActiveFilter] = useState('all')
   const [selectedProject, setSelectedProject] = useState<ProjectDetail | null>(null)
   const [editingProject, setEditingProject] = useState<ProjectDetail | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    getProfile('tech').then((stored) => {
+      if (!alive || !stored) return
+      const profile = stored as Record<string, any>
+      profileRef.current = profile
+      setProjects((profile.projects || []).map((item: Record<string, any>, index: number) => ({
+        id: String(item.id || `project-${index}`),
+        name: String(item.name || ''),
+        shortDescription: String(item.short_description || item.detail || item.description || '').slice(0, 180),
+        description: String(item.detail || item.description || ''),
+        backendTech: Array.isArray(item.tech) ? item.tech : [],
+        frontendTech: [], database: [], deployment: [], apis: [],
+        features: Array.isArray(item.features) ? item.features : [],
+        problemsSolved: String(item.problems_solved || ''),
+        whatILearned: String(item.what_i_learned || ''),
+        githubUrl: String(item.github_url || ''), liveUrl: String(item.live_url || item.url || ''),
+        jobTypes: Array.isArray(item.job_types) ? item.job_types : [],
+        relevanceScore: Number(item.relevance_score) || 0,
+        category: item.category || 'personal',
+        startDate: String(item.start_date || item.year || ''), endDate: String(item.end_date || ''), current: !!item.current,
+      })))
+      setProjectsLoaded(true)
+    })
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (!projectsLoaded) return
+    const timer = window.setTimeout(async () => {
+      const profile = profileRef.current
+      const payload = {
+        ...profile,
+        projects: projects.map((item) => ({
+          id: item.id, name: item.name, year: item.startDate,
+          tech: [...new Set([...item.backendTech, ...item.frontendTech, ...item.database, ...item.deployment, ...item.apis])],
+          detail: item.description || item.shortDescription,
+          short_description: item.shortDescription,
+          features: item.features,
+          problems_solved: item.problemsSolved,
+          what_i_learned: item.whatILearned,
+          github_url: item.githubUrl,
+          live_url: item.liveUrl,
+          job_types: item.jobTypes,
+          relevance_score: item.relevanceScore,
+          category: item.category,
+          start_date: item.startDate,
+          end_date: item.endDate,
+          current: item.current,
+        })),
+      }
+      const saved = await saveProfile(payload, 'tech')
+      if (saved) profileRef.current = saved
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [projects, projectsLoaded])
 
   // Filter projects
   const filteredProjects = useMemo(() => {
