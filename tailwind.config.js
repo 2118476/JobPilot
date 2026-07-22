@@ -3,6 +3,19 @@ const token = (name) => ({ opacityValue }) =>
     ? `var(--${name})`
     : `rgb(var(--${name}-rgb) / ${opacityValue})`
 
+const mutedToken = (name, defaultOpacity) => ({ opacityValue }) => {
+  if (opacityValue === undefined) return `var(--${name})`
+
+  // Tailwind supplies its opacity variable for an unmodified color. Preserve
+  // the muted token's intended alpha, but let explicit modifiers such as /30
+  // continue to override it.
+  const opacity = opacityValue.includes('var(--tw-')
+    ? `calc(${defaultOpacity} * ${opacityValue})`
+    : opacityValue
+
+  return `rgb(var(--${name}-rgb) / ${opacity})`
+}
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: ["class"],
@@ -67,19 +80,19 @@ module.exports = {
         "text-inverse": token("text-inverse"),
         "accent-indigo": token("accent-indigo"),
         "accent-indigo-hover": token("accent-indigo-hover"),
-        "accent-indigo-muted": token("accent-indigo-muted"),
+        "accent-indigo-muted": mutedToken("accent-indigo-muted", 0.15),
         "accent-cyan": token("accent-cyan"),
-        "accent-cyan-muted": token("accent-cyan-muted"),
+        "accent-cyan-muted": mutedToken("accent-cyan-muted", 0.12),
         "accent-emerald": token("accent-emerald"),
-        "accent-emerald-muted": token("accent-emerald-muted"),
+        "accent-emerald-muted": mutedToken("accent-emerald-muted", 0.12),
         "accent-amber": token("accent-amber"),
-        "accent-amber-muted": token("accent-amber-muted"),
+        "accent-amber-muted": mutedToken("accent-amber-muted", 0.12),
         "accent-orange": token("accent-orange"),
-        "accent-orange-muted": token("accent-orange-muted"),
+        "accent-orange-muted": mutedToken("accent-orange-muted", 0.12),
         "accent-rose": token("accent-rose"),
-        "accent-rose-muted": token("accent-rose-muted"),
+        "accent-rose-muted": mutedToken("accent-rose-muted", 0.12),
         "accent-violet": token("accent-violet"),
-        "accent-violet-muted": token("accent-violet-muted"),
+        "accent-violet-muted": mutedToken("accent-violet-muted", 0.12),
       },
       fontFamily: {
         heading: ['"Space Grotesk"', 'system-ui', 'sans-serif'],
