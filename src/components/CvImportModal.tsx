@@ -2,6 +2,12 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, FileText, X, Check, AlertTriangle, Loader2, ShieldCheck, Info } from 'lucide-react'
 import { importCv, type CvExtractionResult } from '@/lib/api'
+import {
+  CV_PERSONAL_FIELDS,
+  CV_PROFILE_SECTIONS,
+  mergeCvProfileSections,
+  type CvProfileSection,
+} from '@/lib/cvProfileMerge'
 
 // ─────────────────────────────────────────────────────────────
 // CvImportModal — "Upload your CV to fill your profile".
@@ -36,18 +42,22 @@ export function CvImportModal({
   open: boolean
   existingProfile?: Extracted
   onClose: () => void
-  onApply: (mergedProfile: Extracted, suggestedTrack: 'tech' | 'construction') => void
+  onApply: (mergedProfile: Extracted, suggestedTrack: 'tech' | 'construction') => void | Promise<void>
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [phase, setPhase] = useState<'upload' | 'loading' | 'review'>('upload')
   const [error, setError] = useState('')
   const [result, setResult] = useState<CvExtractionResult | null>(null)
   const [edited, setEdited] = useState<Extracted>({})
+  const [selectedSections, setSelectedSections] = useState<Record<CvProfileSection, boolean>>(
+    Object.fromEntries(CV_PROFILE_SECTIONS.map((section) => [section, true])) as Record<CvProfileSection, boolean>,
+  )
+  const [applying, setApplying] = useState(false)
   // For scalar conflicts, which side to keep: 'new' (extracted) or 'old' (existing)
   const [choices, setChoices] = useState<Record<string, 'new' | 'old'>>({})
 
   const reset = () => {
-    setPhase('upload'); setError(''); setResult(null); setEdited({}); setChoices({})
+    setPhase('upload'); setError(''); setResult(null); setEdited({}); setChoices({}); setApplying(false)
   }
 
   const handleFile = async (file: File) => {
@@ -60,6 +70,10 @@ export function CvImportModal({
       const res = await importCv(file)
       setResult(res)
       setEdited({ ...res.profile })
+      setSelectedSections(Object.fromEntries(CV_PROFILE_SECTIONS.map((section) => {
+        if (section === 'personal') return [section, CV_PERSONAL_FIELDS.some((field) => String(res.profile[field] || '').trim())]
+        return [section, countItems(res.profile[section]) > 0]
+      })) as Record<CvProfileSection, boolean>)
       // Default conflict choice = keep extracted for empty existing, else prompt
       const c: Record<string, 'new' | 'old'> = {}
       for (const k of ['full_name', 'email', 'phone', 'location', 'headline', 'summary', 'website', 'github', 'linkedin']) {
@@ -75,45 +89,23 @@ export function CvImportModal({
     }
   }
 
-  // Build the final profile: merge arrays (dedupe), apply scalar choices/edits.
-  const buildMerged = (): Extracted => {
-    const ex = existingProfile || {}
-    const merged: Extracted = { ...ex }
-    for (const k of ['full_name', 'email', 'phone', 'location', 'headline', 'summary', 'website', 'github', 'linkedin']) {
-      const editedV = edited[k] as string
-      const oldV = (ex[k] as string) || ''
-      if (choices[k] === 'old') merged[k] = oldV
-      else merged[k] = editedV ?? (ex[k] || '')
+  const apply = async () => {
+    setApplying(true)
+    setError('')
+    try {
+      const track = result?.suggestedTrack || 'tech'
+      const merged = mergeCvProfileSections(existingProfile || {}, edited, selectedSections, track, choices)
+      await onApply(merged, track)
+      reset()
+      onClose()
+    } catch (e) {
+      setApplying(false)
+      setError(e instanceof Error ? e.message : 'Could not save the imported profile. Please try again.')
     }
-    // Merge list sections (dedupe by JSON identity)
-    const mergeList = (key: string) => {
-      const a = Array.isArray(ex[key]) ? (ex[key] as unknown[]) : []
-      const b = Array.isArray(edited[key]) ? (edited[key] as unknown[]) : []
-      const seen = new Set(a.map((x) => JSON.stringify(x)))
-      const out = [...a]
-      for (const item of b) { const k = JSON.stringify(item); if (!seen.has(k)) { seen.add(k); out.push(item) } }
-      merged[key] = out
-    }
-    for (const key of ['education', 'experience', 'projects', 'certifications', 'languages']) mergeList(key)
-    // Merge skills maps
-    const oldSkills = (ex.skills as Record<string, string[]>) || {}
-    const newSkills = (edited.skills as Record<string, string[]>) || {}
-    const skills: Record<string, string[]> = { ...oldSkills }
-    for (const [cat, items] of Object.entries(newSkills)) {
-      skills[cat] = [...new Set([...(skills[cat] || []), ...items])]
-    }
-    merged.skills = skills
-    // Carry construction cards if extracted as certifications
-    return merged
-  }
-
-  const apply = () => {
-    onApply(buildMerged(), result?.suggestedTrack || 'tech')
-    reset()
-    onClose()
   }
 
   const setField = (k: string, v: string) => setEdited((p) => ({ ...p, [k]: v }))
+  const selectedCount = CV_PROFILE_SECTIONS.filter((section) => selectedSections[section]).length
 
   return (
     <AnimatePresence>
@@ -128,14 +120,17 @@ export function CvImportModal({
             transition={{ duration: 0.22 }}
             className="bg-bg-elevated rounded-card-lg border border-border-subtle max-w-2xl w-full max-h-[88vh] shadow-2xl flex flex-col"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cv-import-title"
           >
             {/* Header */}
             <div className="flex items-center justify-between p-5 border-b border-border-subtle flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <FileText size={20} className="text-accent-indigo" />
-                <h2 className="font-heading text-lg font-semibold text-text-primary">Upload your CV to fill your profile</h2>
+                <h2 id="cv-import-title" className="font-heading text-lg font-semibold text-text-primary">Upload your CV to fill your profile</h2>
               </div>
-              <button onClick={() => { reset(); onClose() }} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"><X size={18} /></button>
+              <button aria-label="Close CV import" onClick={() => { reset(); onClose() }} className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"><X size={18} /></button>
             </div>
 
             <div className="p-5 overflow-y-auto flex-1">
@@ -180,7 +175,25 @@ export function CvImportModal({
                   )}
 
                   {/* Scalar fields (editable, with conflict choice) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-text-primary">Choose what to add</h3>
+                      <p className="text-xs text-text-muted">Only selected sections will change. Existing data is preserved and matching entries are merged.</p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-pressed={selectedSections.personal}
+                      onClick={() => setSelectedSections((current) => ({ ...current, personal: !current.personal }))}
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                        selectedSections.personal
+                          ? 'border-accent-indigo bg-accent-indigo-muted text-accent-indigo'
+                          : 'border-border-default bg-bg-tertiary text-text-muted'
+                      }`}
+                    >
+                      {selectedSections.personal ? '✓ ' : ''}Personal details
+                    </button>
+                  </div>
+                  <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 transition-opacity ${selectedSections.personal ? '' : 'opacity-45'}`}>
                     {Object.keys(FIELD_LABELS).map((k) => {
                       const oldV = (existingProfile?.[k] as string) || ''
                       const newV = (edited[k] as string) || ''
@@ -194,10 +207,10 @@ export function CvImportModal({
                             {meta && <span className="text-[10px] text-text-muted">{Math.round(meta.confidence * 100)}% confident</span>}
                           </div>
                           {k === 'summary' ? (
-                            <textarea value={newV} onChange={(e) => setField(k, e.target.value)} rows={3}
+                            <textarea disabled={!selectedSections.personal} value={newV} onChange={(e) => setField(k, e.target.value)} rows={3}
                               className="w-full px-3 py-2 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:outline-none resize-y" />
                           ) : (
-                            <input value={newV} onChange={(e) => setField(k, e.target.value)}
+                            <input disabled={!selectedSections.personal} value={newV} onChange={(e) => setField(k, e.target.value)}
                               className="w-full h-9 px-3 rounded-input bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:outline-none" />
                           )}
                           {conflict && (
@@ -205,7 +218,7 @@ export function CvImportModal({
                               <span className="text-text-muted">Existing: “{oldV}”</span>
                               <button onClick={() => { setChoices((c) => ({ ...c, [k]: 'old' })); setField(k, oldV) }}
                                 className={`px-1.5 py-0.5 rounded ${choices[k] === 'old' ? 'bg-accent-indigo text-white' : 'bg-bg-tertiary text-text-secondary'}`}>Keep existing</button>
-                              <button onClick={() => setChoices((c) => ({ ...c, [k]: 'new' }))}
+                              <button onClick={() => { setChoices((c) => ({ ...c, [k]: 'new' })); setField(k, String(result.profile[k] || '')) }}
                                 className={`px-1.5 py-0.5 rounded ${choices[k] !== 'old' ? 'bg-accent-indigo text-white' : 'bg-bg-tertiary text-text-secondary'}`}>Use uploaded</button>
                             </div>
                           )}
@@ -214,23 +227,41 @@ export function CvImportModal({
                     })}
                   </div>
 
-                  {/* List sections summary (merged, deduped on save) */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {/* Matching profile sections (merged, deduped on save) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {[
-                      { k: 'experience', label: 'Experience' },
-                      { k: 'education', label: 'Education' },
-                      { k: 'projects', label: 'Projects' },
-                      { k: 'skills', label: 'Skills' },
-                    ].map(({ k, label }) => (
-                      <div key={k} className="p-2.5 rounded-lg bg-bg-tertiary/50 border border-border-subtle text-center">
+                      { k: 'experience' as const, label: 'Experience' },
+                      { k: 'education' as const, label: 'Education' },
+                      { k: 'projects' as const, label: 'Projects' },
+                      { k: 'skills' as const, label: 'Skills' },
+                      { k: 'certifications' as const, label: 'Certifications' },
+                      { k: 'languages' as const, label: 'Languages' },
+                    ].map(({ k, label }) => {
+                      const found = countItems(edited[k])
+                      return (
+                      <button
+                        type="button"
+                        key={k}
+                        disabled={found === 0}
+                        aria-pressed={selectedSections[k]}
+                        onClick={() => setSelectedSections((current) => ({ ...current, [k]: !current[k] }))}
+                        className={`p-2.5 rounded-lg border text-center transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${
+                          selectedSections[k]
+                            ? 'bg-accent-indigo-muted border-accent-indigo/30'
+                            : 'bg-bg-tertiary/50 border-border-subtle'
+                        }`}
+                      >
                         <p className="text-lg font-bold text-text-primary">{countItems(edited[k])}</p>
-                        <p className="text-[11px] text-text-muted">{label} found</p>
-                      </div>
-                    ))}
+                        <p className={`text-[11px] ${selectedSections[k] ? 'text-accent-indigo' : 'text-text-muted'}`}>
+                          {selectedSections[k] ? '✓ ' : ''}{label} found
+                        </p>
+                      </button>
+                    )})}
                   </div>
                   <p className="text-xs text-text-muted">
-                    Experience, education, projects and skills will be <span className="text-text-secondary">merged</span> with your existing profile (duplicates removed) when you approve.
+                    Gemini&apos;s extraction is a preview. Review it carefully: selected items are merged into their matching profile sections, while preferences, goals and application answers are never inferred from a CV.
                   </p>
+                  {error && <p className="text-sm text-accent-rose flex items-center gap-1.5"><AlertTriangle size={14} /> {error}</p>}
                 </div>
               )}
             </div>
@@ -238,9 +269,10 @@ export function CvImportModal({
             {/* Footer */}
             {phase === 'review' && (
               <div className="flex justify-end gap-3 p-5 border-t border-border-subtle flex-shrink-0">
-                <button onClick={reset} className="px-4 py-2 rounded-button border border-border-default text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Upload a different file</button>
-                <button onClick={apply} className="flex items-center gap-1.5 px-5 py-2 rounded-button bg-accent-emerald text-[#0B0F19] text-sm font-semibold hover:bg-accent-emerald/90 transition-colors">
-                  <Check size={15} /> Approve &amp; fill my profile
+                <button disabled={applying} onClick={reset} className="px-4 py-2 rounded-button border border-border-default text-sm text-text-secondary hover:bg-bg-tertiary transition-colors disabled:opacity-50">Upload a different file</button>
+                <button disabled={applying || selectedCount === 0} onClick={apply} className="flex items-center gap-1.5 px-5 py-2 rounded-button bg-accent-emerald text-[#0B0F19] text-sm font-semibold hover:bg-accent-emerald/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {applying ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                  {applying ? 'Saving approved sections…' : 'Approve & fill my profile'}
                 </button>
               </div>
             )}

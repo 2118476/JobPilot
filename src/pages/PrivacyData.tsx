@@ -20,7 +20,8 @@ import {
   Clock,
 } from 'lucide-react'
 import { useUIStore } from '@/store/uiStore'
-import { exportData, importData, deleteAllData } from '@/lib/api'
+import { exportData, importData, deleteAllData, saveProfile } from '@/lib/api'
+import { CvImportModal } from '@/components/CvImportModal'
 
 // ─────────────────────────────────────────────
 // Animation config
@@ -149,6 +150,7 @@ export default function PrivacyData() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [exportLoading, setExportLoading] = useState(false)
   const [importLoading, setImportLoading] = useState(false)
+  const [cvImportOpen, setCvImportOpen] = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
   const [deleteAllText, setDeleteAllText] = useState('')
 
@@ -198,6 +200,20 @@ export default function PrivacyData() {
     } finally {
       setImportLoading(false)
     }
+  }
+
+  const handleCvProfileImport = async (mergedProfile: Record<string, unknown>) => {
+    const saved = await saveProfile(mergedProfile, 'tech')
+    if (!saved) throw new Error('JobPilot could not save the approved CV details. Please try again.')
+    setWorkspace((current) => current ? {
+      ...current,
+      profiles: { ...(current.profiles || {}), tech: saved as ArchiveRecord },
+    } : current)
+    addToast({
+      type: 'success',
+      title: 'CV details added',
+      message: 'The approved sections were merged into your Career Profile.',
+    })
   }
 
   // Clear local app data (keeps the mock user registry so login still works).
@@ -299,6 +315,24 @@ export default function PrivacyData() {
                 <Download size={14} />
               )}
               {exportLoading ? 'Preparing...' : 'Export All'}
+            </button>
+          </div>
+
+          {/* Import CV into Career Profile */}
+          <div className="flex items-center justify-between p-4 rounded-card bg-bg-tertiary border border-border-subtle flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <FileText size={18} className="text-accent-indigo flex-shrink-0" />
+              <div>
+                <p className="text-body-sm font-medium text-text-primary">Import CV into Career Profile</p>
+                <p className="text-body-xs text-text-muted">Upload a PDF or DOCX, review Gemini&apos;s extraction, then choose which profile sections to merge.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCvImportOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-button border border-accent-indigo/30 bg-accent-indigo-muted text-body-sm text-accent-indigo hover:border-accent-indigo transition-all"
+            >
+              <Upload size={14} /> Choose CV
             </button>
           </div>
 
@@ -419,35 +453,36 @@ export default function PrivacyData() {
               className="rounded-card-lg border border-border-subtle bg-bg-secondary overflow-hidden"
             >
               {/* Header */}
-              <button
-                onClick={() => toggleSection(section.id)}
-                className="w-full flex items-center justify-between p-5 hover:bg-bg-tertiary/30 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <SectionIcon size={20} className="text-accent-indigo flex-shrink-0" />
-                  <span className="font-heading text-heading-md font-semibold text-text-primary truncate">
-                    {section.title}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-bg-tertiary text-text-muted text-mono-sm flex-shrink-0">
-                    {section.count}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      section.exportData()
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-button-sm text-body-xs text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
-                  >
-                    <Download size={12} />
-                    Export
-                  </button>
+              <div className="w-full flex items-center hover:bg-bg-tertiary/30 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.id)}
+                  aria-expanded={isExpanded}
+                  className="flex-1 min-w-0 flex items-center justify-between p-5 text-left"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <SectionIcon size={20} className="text-accent-indigo flex-shrink-0" />
+                    <span className="font-heading text-heading-md font-semibold text-text-primary truncate">
+                      {section.title}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-bg-tertiary text-text-muted text-mono-sm flex-shrink-0">
+                      {section.count}
+                    </span>
+                  </div>
                   <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
                     <ChevronDown size={18} className="text-text-muted" />
                   </motion.div>
-                </div>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => section.exportData()}
+                  aria-label={`Export ${section.title}`}
+                  className="mr-4 flex items-center gap-1.5 px-3 py-1.5 rounded-button-sm text-body-xs text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-colors"
+                >
+                  <Download size={12} />
+                  Export
+                </button>
+              </div>
 
               {/* Expanded Content */}
               <AnimatePresence>
@@ -629,6 +664,13 @@ export default function PrivacyData() {
           </ModalOverlay>
         )}
       </AnimatePresence>
+
+      <CvImportModal
+        open={cvImportOpen}
+        existingProfile={workspace?.profiles?.tech || {}}
+        onClose={() => setCvImportOpen(false)}
+        onApply={(mergedProfile) => handleCvProfileImport(mergedProfile)}
+      />
     </motion.div>
   )
 }

@@ -11,6 +11,8 @@ import {
   CheckCircle2, XCircle, Save
 } from 'lucide-react'
 import { getProfile, saveProfile } from '@/lib/api'
+import { CvImportModal } from '@/components/CvImportModal'
+import { useUIStore } from '@/store/uiStore'
 
 // ─── Types ────────────────────────────────────
 type SectionId = 'personal' | 'education' | 'skills' | 'experience' | 'projects' | 'preferences' | 'goals' | 'answers'
@@ -58,6 +60,7 @@ interface ProfileData {
     email: string
     phone: string
     location: string
+    headline: string
     rightToWork: string
     linkedin: string
     github: string
@@ -66,6 +69,8 @@ interface ProfileData {
   }
   education: EducationEntry[]
   skills: SkillGroup[]
+  certifications: string[]
+  languages: string[]
   experience: ExperienceEntry[]
   projects: ProjectLink[]
   preferences: {
@@ -92,6 +97,7 @@ const personalSchema = z.object({
   email: z.string().email('Invalid email'),
   phone: z.string().optional(),
   location: z.string().min(1, 'Location is required'),
+  headline: z.string().max(240, 'Max 240 characters'),
   rightToWork: z.string().min(1, 'Required'),
   linkedin: z.string().optional(),
   github: z.string().optional(),
@@ -139,9 +145,11 @@ const EMPTY_SKILL_CATEGORIES = [
 
 function blankProfileData(): ProfileData {
   return {
-    personal: { fullName: '', email: '', phone: '', location: '', rightToWork: '', linkedin: '', github: '', portfolio: '', summary: '' },
+    personal: { fullName: '', email: '', phone: '', location: '', headline: '', rightToWork: '', linkedin: '', github: '', portfolio: '', summary: '' },
     education: [],
     skills: EMPTY_SKILL_CATEGORIES.map((category) => ({ category, skills: [] })),
+    certifications: [],
+    languages: [],
     experience: [],
     projects: [],
     preferences: {
@@ -196,6 +204,7 @@ function backendToProfile(raw: BackendProfile): ProfileData {
       email: String(raw.email || ''),
       phone: String(raw.phone || ''),
       location: String(raw.location || ''),
+      headline: String(raw.headline || ''),
       rightToWork: String(additional.right_to_work || ''),
       linkedin: String(raw.linkedin || ''),
       github: String(raw.github || ''),
@@ -208,6 +217,8 @@ function backendToProfile(raw: BackendProfile): ProfileData {
       current: !!entry.current, grade: String(entry.grade || ''), modules: asStringList(entry.modules),
     })),
     skills: skills.length ? skills : empty.skills,
+    certifications: asStringList(raw.certifications),
+    languages: asStringList(additional.languages || raw.languages),
     experience: asEntries(raw.experience).map((entry, index: number) => ({
       id: String(entry.id || `exp-${index}`), company: String(entry.company || ''), role: String(entry.role || ''),
       startDate: String(entry.start_date || entry.dates || ''), endDate: String(entry.end_date || ''), current: !!entry.current,
@@ -237,6 +248,7 @@ function profileToBackend(profile: ProfileData, existing: BackendProfile): Backe
     email: profile.personal.email,
     phone: profile.personal.phone,
     location: profile.personal.location,
+    headline: profile.personal.headline,
     linkedin: profile.personal.linkedin,
     github: profile.personal.github,
     website: profile.personal.portfolio,
@@ -252,6 +264,7 @@ function profileToBackend(profile: ProfileData, existing: BackendProfile): Backe
       dates: [entry.startDate, entry.current ? 'Present' : entry.endDate].filter(Boolean).join(' – '),
     })),
     skills: Object.fromEntries(profile.skills.map((group) => [group.category, group.skills.map((skill) => skill.name)])),
+    certifications: profile.certifications,
     projects: profile.projects.map((entry) => ({ id: entry.id, name: entry.name, detail: entry.description, url: entry.url, tech: entry.technologies })),
     preferences: {
       ...asEntry(existing.preferences), titles: profile.preferences.titles, industries: profile.preferences.industries,
@@ -263,7 +276,7 @@ function profileToBackend(profile: ProfileData, existing: BackendProfile): Backe
     goals: profile.goals.careerGoal,
     skills_to_learn: profile.goals.skillsToLearn,
     application_answers: profile.answers,
-    additional: { ...asEntry(existing.additional), right_to_work: profile.personal.rightToWork },
+    additional: { ...asEntry(existing.additional), right_to_work: profile.personal.rightToWork, languages: profile.languages },
     track: 'tech',
   }
 }
@@ -475,25 +488,27 @@ function SectionHeader({ title, icon: Icon, onAdd, onEdit, onDelete, onExport, o
 
 // ─── Main Component ───────────────────────────
 export default function CareerProfile() {
+  const addToast = useUIStore((state) => state.addToast)
   const [profile, setProfile] = useState<ProfileData>(() => blankProfileData())
   const rawProfileRef = useRef<BackendProfile>({})
   const [profileLoaded, setProfileLoaded] = useState(false)
   const [activeTab, setActiveTab] = useState<SectionId>('personal')
   const [editingSection, setEditingSection] = useState<SectionId | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void; destructive?: boolean }>({ open: false, title: '', message: '', onConfirm: () => {} })
-  const [showImportModal, setShowImportModal] = useState(false)
-  const [importSection, setImportSection] = useState<SectionId | null>(null)
+  const [cvImportOpen, setCvImportOpen] = useState(false)
   const sectionRefs = useRef<Record<SectionId, HTMLElement | null>>({} as Record<SectionId, HTMLElement | null>)
 
   // Calculate profile completeness
   const completeness = useMemo(() => {
     let filled = 0, total = 0
     const fields = profile.personal
-    const personalFields = ['fullName', 'email', 'location', 'summary'] as const
+    const personalFields = ['fullName', 'email', 'location', 'headline', 'summary'] as const
     personalFields.forEach(f => { total++; if (fields[f as keyof typeof fields]) filled++ })
     if (profile.education.length > 0) filled++
     total++
     profile.skills.forEach(g => { total++; if (g.skills.length > 0) filled++ })
+    total++
+    if (profile.certifications.length > 0 || profile.languages.length > 0) filled++
     if (profile.experience.length > 0) filled++
     total++
     if (profile.projects.length > 0) filled++
@@ -535,7 +550,9 @@ export default function CareerProfile() {
 
   // ─── Data Control Handlers ──────────────────
   const handleExport = (section: SectionId) => {
-    const data = profile[section]
+    const data = section === 'skills'
+      ? { skills: profile.skills, certifications: profile.certifications, languages: profile.languages }
+      : profile[section]
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -555,17 +572,6 @@ export default function CareerProfile() {
     URL.revokeObjectURL(url)
   }
 
-  const handleImport = (section: SectionId, jsonStr: string) => {
-    try {
-      const data = JSON.parse(jsonStr)
-      setProfile(prev => ({ ...prev, [section]: data }))
-      setShowImportModal(false)
-      setImportSection(null)
-    } catch {
-      alert('Invalid JSON format')
-    }
-  }
-
   const handleClear = (section: SectionId) => {
     setConfirmDialog({
       open: true,
@@ -577,13 +583,13 @@ export default function CareerProfile() {
           switch (section) {
             case 'education': next.education = []; break
             case 'experience': next.experience = []; break
-            case 'skills': next.skills = blankProfileData().skills; break
+            case 'skills': next.skills = blankProfileData().skills; next.certifications = []; next.languages = []; break
             case 'projects': next.projects = []; break
             case 'preferences': next.preferences = blankProfileData().preferences; break
             case 'goals': next.goals = { careerGoal: '', skillsToLearn: [] }; break
             case 'answers': next.answers = prev.answers.map(a => ({ ...a, answer: '' })); break
             case 'personal':
-              next.personal = { fullName: '', email: '', phone: '', location: '', rightToWork: '', linkedin: '', github: '', portfolio: '', summary: '' }
+              next.personal = { fullName: '', email: '', phone: '', location: '', headline: '', rightToWork: '', linkedin: '', github: '', portfolio: '', summary: '' }
               break
           }
           return next
@@ -650,6 +656,22 @@ export default function CareerProfile() {
     })
     return () => { alive = false }
   }, [personalForm])
+
+  const applyCvImport = async (mergedProfile: Record<string, unknown>) => {
+    const saved = await saveProfile(mergedProfile, 'tech')
+    if (!saved) throw new Error('JobPilot could not save the approved CV details. Please check your connection and try again.')
+    const raw = saved as BackendProfile
+    const mapped = backendToProfile(raw)
+    rawProfileRef.current = raw
+    setProfile(mapped)
+    personalForm.reset(mapped.personal)
+    setProfileLoaded(true)
+    addToast({
+      type: 'success',
+      title: 'CV details added',
+      message: 'Only the approved sections were merged into your Career Profile.',
+    })
+  }
 
   // Persist every edit to the authenticated account after a short debounce.
   useEffect(() => {
@@ -734,8 +756,8 @@ export default function CareerProfile() {
               <button onClick={handleExportAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border-default text-text-secondary hover:bg-bg-tertiary transition-colors">
                 <Download size={13} /> Export Profile
               </button>
-              <button onClick={() => { setImportSection(null); setShowImportModal(true) }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border-default text-text-secondary hover:bg-bg-tertiary transition-colors">
-                <Upload size={13} /> Import Data
+              <button onClick={() => setCvImportOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border-default text-text-secondary hover:bg-bg-tertiary transition-colors">
+                <Upload size={13} /> Import CV
               </button>
               <button onClick={() => setEditingSection(null)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors">
                 <Eye size={13} /> Preview as Text
@@ -784,7 +806,7 @@ export default function CareerProfile() {
           title="Personal Information" icon={User}
           onAdd={() => setEditingSection('personal')}
           onEdit={() => setEditingSection('personal')}
-          onDelete={() => setConfirmDialog({ open: true, title: 'Delete Personal Info', message: 'Clear all personal information?', onConfirm: () => { setProfile(p => ({ ...p, personal: { ...p.personal, fullName: '', email: '', phone: '', location: '', summary: '' } })); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
+          onDelete={() => setConfirmDialog({ open: true, title: 'Delete Personal Info', message: 'Clear all personal information?', onConfirm: () => { setProfile(p => ({ ...p, personal: { ...p.personal, fullName: '', email: '', phone: '', location: '', headline: '', summary: '' } })); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
           onExport={() => handleExport('personal')}
           onClear={() => handleClear('personal')}
         />
@@ -795,6 +817,7 @@ export default function CareerProfile() {
               <div><label className="block text-xs font-medium text-text-secondary mb-1">Email *</label><input {...personalForm.register('email')} type="email" className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
               <div><label className="block text-xs font-medium text-text-secondary mb-1">Phone</label><input {...personalForm.register('phone')} className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
               <div><label className="block text-xs font-medium text-text-secondary mb-1">Location *</label><input {...personalForm.register('location')} className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
+              <div className="md:col-span-2"><label className="block text-xs font-medium text-text-secondary mb-1">Professional Headline</label><input {...personalForm.register('headline')} placeholder="e.g. Support Analyst | ITIL & Microsoft 365" className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all" /></div>
               <div><label className="block text-xs font-medium text-text-secondary mb-1">Right to Work</label>
                 <select {...personalForm.register('rightToWork')} className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all">
                   <option value="">Select...</option>
@@ -824,6 +847,7 @@ export default function CareerProfile() {
             <div className="flex items-start gap-2"><Mail size={14} className="text-text-muted mt-0.5 flex-shrink-0" /><div><span className="text-xs text-text-muted block">Email</span><span className="text-sm text-text-primary">{profile.personal.email || '-'}</span></div></div>
             <div className="flex items-start gap-2"><Phone size={14} className="text-text-muted mt-0.5 flex-shrink-0" /><div><span className="text-xs text-text-muted block">Phone</span><span className="text-sm text-text-primary">{profile.personal.phone || '-'}</span></div></div>
             <div className="flex items-start gap-2"><MapPin size={14} className="text-text-muted mt-0.5 flex-shrink-0" /><div><span className="text-xs text-text-muted block">Location</span><span className="text-sm text-text-primary">{profile.personal.location || '-'}</span></div></div>
+            <div className="flex items-start gap-2"><Briefcase size={14} className="text-text-muted mt-0.5 flex-shrink-0" /><div><span className="text-xs text-text-muted block">Professional Headline</span><span className="text-sm text-text-primary">{profile.personal.headline || '-'}</span></div></div>
             <div className="flex items-start gap-2"><FileText size={14} className="text-text-muted mt-0.5 flex-shrink-0" /><div><span className="text-xs text-text-muted block">Right to Work</span><span className="text-sm text-text-primary">{profile.personal.rightToWork || '-'}</span></div></div>
             <div className="flex items-start gap-2"><Link2 size={14} className="text-text-muted mt-0.5 flex-shrink-0" /><div><span className="text-xs text-text-muted block">LinkedIn</span><span className="text-sm text-text-primary">{profile.personal.linkedin || '-'}</span></div></div>
             <div className="flex items-start gap-2"><Code size={14} className="text-text-muted mt-0.5 flex-shrink-0" /><div><span className="text-xs text-text-muted block">GitHub</span><span className="text-sm text-text-primary">{profile.personal.github || '-'}</span></div></div>
@@ -909,7 +933,7 @@ export default function CareerProfile() {
           title="Skills & Technologies" icon={Code}
           onAdd={() => setEditingSection('skills')}
           onEdit={() => setEditingSection('skills')}
-          onDelete={() => setConfirmDialog({ open: true, title: 'Delete Skills', message: 'Remove all skills?', onConfirm: () => { setProfile(p => ({ ...p, skills: p.skills.map(g => ({ ...g, skills: [] })) })); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
+          onDelete={() => setConfirmDialog({ open: true, title: 'Delete Skills', message: 'Remove all skills, certifications and languages?', onConfirm: () => { setProfile(p => ({ ...p, skills: p.skills.map(g => ({ ...g, skills: [] })), certifications: [], languages: [] })); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
           onExport={() => handleExport('skills')}
           onClear={() => handleClear('skills')}
         />
@@ -961,6 +985,50 @@ export default function CareerProfile() {
               </div>
             </div>
           ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-4 border-t border-border-subtle">
+            <div>
+              <h4 className="text-sm font-medium text-text-secondary mb-2">Certifications &amp; professional cards</h4>
+              {editingSection === 'skills' ? (
+                <TagInput
+                  tags={profile.certifications}
+                  placeholder="Add a certification and press Enter"
+                  onAdd={(value) => setProfile((current) => ({
+                    ...current,
+                    certifications: current.certifications.some((item) => item.toLowerCase() === value.toLowerCase())
+                      ? current.certifications
+                      : [...current.certifications, value],
+                  }))}
+                  onRemove={(value) => setProfile((current) => ({ ...current, certifications: current.certifications.filter((item) => item !== value) }))}
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {profile.certifications.map((item) => <span key={item} className="px-3 py-1.5 rounded-full text-xs font-medium bg-accent-emerald-muted text-accent-emerald">{item}</span>)}
+                  {!profile.certifications.length && <span className="text-xs text-text-muted italic">No certifications added</span>}
+                </div>
+              )}
+            </div>
+            <div>
+              <h4 className="text-sm font-medium text-text-secondary mb-2">Languages</h4>
+              {editingSection === 'skills' ? (
+                <TagInput
+                  tags={profile.languages}
+                  placeholder="Add a language and press Enter"
+                  onAdd={(value) => setProfile((current) => ({
+                    ...current,
+                    languages: current.languages.some((item) => item.toLowerCase() === value.toLowerCase())
+                      ? current.languages
+                      : [...current.languages, value],
+                  }))}
+                  onRemove={(value) => setProfile((current) => ({ ...current, languages: current.languages.filter((item) => item !== value) }))}
+                />
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {profile.languages.map((item) => <span key={item} className="px-3 py-1.5 rounded-full text-xs font-medium bg-accent-cyan-muted text-accent-cyan">{item}</span>)}
+                  {!profile.languages.length && <span className="text-xs text-text-muted italic">No languages added</span>}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </motion.section>
 
@@ -1316,8 +1384,8 @@ export default function CareerProfile() {
         <button onClick={handleExportAll} className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium border border-border-default text-text-secondary hover:bg-bg-tertiary transition-colors">
           <Download size={14} /> Export All Profile Data
         </button>
-        <button onClick={() => { setImportSection(null); setShowImportModal(true) }} className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium border border-border-default text-text-secondary hover:bg-bg-tertiary transition-colors">
-          <Upload size={14} /> Import Profile Data
+        <button onClick={() => setCvImportOpen(true)} className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium border border-border-default text-text-secondary hover:bg-bg-tertiary transition-colors">
+          <Upload size={14} /> Import PDF or DOCX CV
         </button>
         <button
           onClick={() => setConfirmDialog({ open: true, title: 'Delete All Profile Data', message: 'This will permanently delete ALL your profile data. This cannot be undone.', onConfirm: () => { setProfile(blankProfileData()); setConfirmDialog(pr => ({ ...pr, open: false })) }, destructive: true })}
@@ -1327,40 +1395,12 @@ export default function CareerProfile() {
         </button>
       </motion.div>
 
-      {/* Import Modal */}
-      <AnimatePresence>
-        {showImportModal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            onClick={() => setShowImportModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ duration: 0.2, ease: easeOut }}
-              className="bg-bg-elevated rounded-card-lg border border-border-subtle p-6 max-w-lg w-[90%] shadow-2xl"
-              onClick={e => e.stopPropagation()}
-            >
-              <h3 className="font-heading text-lg font-semibold text-text-primary mb-2">Import Profile Data</h3>
-              <p className="text-sm text-text-muted mb-4">Paste JSON data below. {importSection ? `This will replace your ${sections.find(s => s.id === importSection)?.label} data.` : 'This will replace all profile data.'}</p>
-              <textarea
-                id="import-json" rows={10}
-                className="w-full px-3 py-2 rounded-lg bg-bg-tertiary border border-border-default text-sm text-text-primary placeholder:text-text-muted focus:border-accent-indigo focus:ring-2 focus:ring-accent-indigo/15 transition-all resize-y font-mono"
-                placeholder={`Paste JSON here...`}
-              />
-              <div className="flex justify-end gap-3 mt-4">
-                <button onClick={() => setShowImportModal(false)} className="px-4 py-2 rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Cancel</button>
-                <button
-                  onClick={() => { const val = (document.getElementById('import-json') as HTMLTextAreaElement)?.value; if (importSection) handleImport(importSection, val); else { try { const d = JSON.parse(val); setProfile(d); setShowImportModal(false); } catch { alert('Invalid JSON') } } }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-accent-indigo text-white hover:bg-accent-indigo-hover transition-colors"
-                >
-                  Import
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <CvImportModal
+        open={cvImportOpen}
+        existingProfile={rawProfileRef.current}
+        onClose={() => setCvImportOpen(false)}
+        onApply={(mergedProfile) => applyCvImport(mergedProfile)}
+      />
 
       {/* Confirmation Dialog */}
       <ConfirmationDialog

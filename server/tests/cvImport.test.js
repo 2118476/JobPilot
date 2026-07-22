@@ -7,6 +7,7 @@ import request from 'supertest'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { jsPDF } from 'jspdf'
 
 process.env.JOBPILOT_DATA_DIR = mkdtempSync(path.join(tmpdir(), 'jobpilot-cv-'))
 process.env.AI_PROVIDER = 'heuristic'
@@ -60,6 +61,23 @@ describe('upload endpoint validation', () => {
       .attach('cv', Buffer.from('%PDF-1.4 this is not really a pdf'), { filename: 'cv.pdf', contentType: 'application/pdf' })
     expect(res.status).toBe(422)
     expect(res.body.error).toBeTruthy()
+  })
+
+  it('accepts a real text PDF and returns a profile preview without saving it', async () => {
+    const pdf = new jsPDF()
+    pdf.text(['Jane Candidate', 'jane@example.com', 'Skills', 'Microsoft 365, ITIL, Service Desk'], 12, 16)
+    const buffer = Buffer.from(pdf.output('arraybuffer'))
+
+    const res = await request(app)
+      .post('/api/profile/import-cv')
+      .set('Authorization', USER)
+      .attach('cv', buffer, { filename: 'jane-cv.pdf', contentType: 'application/pdf' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.profile.email).toBe('jane@example.com')
+    expect(Object.values(res.body.profile.skills).flat()).toContain('Microsoft 365')
+    const stored = await request(app).get('/api/profile').set('Authorization', USER)
+    expect(stored.body.email).toBeFalsy()
   })
 })
 
